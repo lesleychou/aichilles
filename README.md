@@ -3,7 +3,7 @@
   AIChilles Risk Discovery
 </h1>
 
-<p align="center">Automatically find diverse, high-impact weaknesses in AI-discovered (ADRS) programs.</p>
+<p align="center">Automatically Uncovering Hidden Weaknesses in AI-Evolved Systems.</p>
 
 <p align="center">
   <a href="https://arxiv.org/abs/2606.15834"><img src="https://img.shields.io/badge/paper-arXiv-b31b1b?style=flat-square" alt="arXiv" /></a>
@@ -12,22 +12,17 @@
 </p>
 
 <p align="center">
-  <img src="assets/overview.png" width="760" alt="AIChilles Risk Discovery pipeline overview">
+  <img src="assets/overview.png" width="560" alt="AIChilles Risk Discovery pipeline overview">
 </p>
 
 ---
 
 **AIChilles Risk Discovery** is a 3-agent pipeline that stress-tests a *candidate* program `P'`
 (produced by an automated discovery / evolution system) against its *reference* program `P`,
-and surfaces the workloads where `P'` quietly goes wrong — crashes, wrong answers, blow-ups in
+and surfaces the workloads where `P'` quietly goes wrong — crashes, worse targeted performance, blow-ups in
 time, or blow-ups in memory.
 
-It explores the space of inputs the way a fuzzer does, but uses **code coverage as a novelty
-signal** and an **LLM as the mutator**, so it spends its budget on genuinely *new* behaviors
-instead of re-testing the same path. Confirmed weaknesses are then clustered and explained.
-
-The 5 target apps come from the SkyDiscover [ADRS benchmark](https://github.com/skydiscover-ai/skydiscover/tree/main/benchmarks/ADRS).
-
+We support 5 system apps come from the SkyDiscover [ADRS benchmark](https://github.com/skydiscover-ai/skydiscover/tree/main/benchmarks/ADRS).
 ---
 
 ## ✨ Highlights
@@ -200,7 +195,7 @@ python aichilles_risk_discovery/plot_bugs.py \
 
 ---
 
-## 🔗 Credits
+## 🔗 AI-evolved System Framework References
 
 The candidate programs (`P'`) were produced by three evolutionary methods (the `<method>` in the
 `--best_program` path):
@@ -208,4 +203,6 @@ The candidate programs (`P'`) were produced by three evolutionary methods (the `
 - **AdaEvolve** / **OpenEvolve** — from [SkyDiscover](https://github.com/skydiscover-ai/skydiscover)
 - **Engram** — from [mit-nms/Engram](https://github.com/mit-nms/Engram/tree/engram)
 
-AIChilles Risk Discovery adds the weakness-discovery pipeline (Agents 1–3) on top of those apps.
+This repo ships the `best_program.py` we found for every combination of all 3 frameworks above,
+each evolved with **2 LLMs** (`gpt` = GPT-5, `claude` = Claude-Opus-4.6), across all 5 apps. Feel
+free to drop in your own `best_program.py` and point `--best_program` at it.
