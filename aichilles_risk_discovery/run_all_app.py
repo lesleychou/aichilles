@@ -1,9 +1,9 @@
-# aichilles_risk_discovery/run_all_v2.py
+# aichilles_risk_discovery/run_all_app.py
 """
 Orchestrator: chain Agent 1 → Agent 2 (x4) → Agent 3 for one ADRS app.
 
 Usage:
-  python run_all_v2.py --app eplb \
+  python run_all_app.py --app eplb \
     --best_program benchmarks/ADRS/eplb/best/claude/adaevolve/best_program.py \
     [--budget 200] [--patience 5] [--theta 0.1] \
     [--skip_agent1] [--skip_agent2] [--results_dir path/to/existing/run] \

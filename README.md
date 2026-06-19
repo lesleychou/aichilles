@@ -1,13 +1,18 @@
 <h1 align="center">
-  🌶️ <b>AIChilles Risk Discovery</b>
+  <img src="assets/aichilles_logo.png" alt="AIChilles logo" height="130"><br>
+  AIChilles Risk Discovery
 </h1>
 
 <p align="center">Automatically find diverse, high-impact weaknesses in AI-discovered (ADRS) programs.</p>
 
 <p align="center">
-  <a href="#-quick-start"><img src="https://img.shields.io/badge/quick-start-orange?style=flat-square" alt="Quick Start" /></a>
+  <a href="https://arxiv.org/abs/2606.15834"><img src="https://img.shields.io/badge/paper-arXiv-b31b1b?style=flat-square" alt="arXiv" /></a>
   <a href="#-the-four-weakness-types"><img src="https://img.shields.io/badge/weakness%20types-4-red?style=flat-square" alt="Weakness Types" /></a>
   <a href="#-running-on-each-app"><img src="https://img.shields.io/badge/apps-5-blue?style=flat-square" alt="Apps" /></a>
+</p>
+
+<p align="center">
+  <img src="assets/overview.png" width="760" alt="AIChilles Risk Discovery pipeline overview">
 </p>
 
 ---
@@ -22,15 +27,6 @@ signal** and an **LLM as the mutator**, so it spends its budget on genuinely *ne
 instead of re-testing the same path. Confirmed weaknesses are then clustered and explained.
 
 The 5 target apps come from the SkyDiscover [ADRS benchmark](https://github.com/skydiscover-ai/skydiscover/tree/main/benchmarks/ADRS).
-
-```
-            ┌──────────┐      ┌──────────────────┐      ┌──────────────┐
-  app  ───▶ │ Agent 1  │ ───▶ │     Agent 2      │ ───▶ │   Agent 3    │ ───▶  report.md
-  P, P'     │ grammar  │      │  MAP-Elites loop │      │ cluster +    │       clusters.json
-            │ + sampler│      │ (×4 weakness     │      │ root-cause   │
-            │          │      │  types)          │      │              │
-            └──────────┘      └──────────────────┘      └──────────────┘
-```
 
 ---
 
@@ -77,7 +73,7 @@ export ANTHROPIC_API_KEY=sk-...
 **Smoke test (~5 min, tiny budget):**
 
 ```bash
-python aichilles_risk_discovery/run_all_v2.py \
+python aichilles_risk_discovery/run_all_app.py \
   --app eplb \
   --best_program benchmarks/ADRS/eplb/best/claude/adaevolve/best_program.py \
   --budget 10 --patience 2
@@ -98,7 +94,7 @@ and `<method>` ∈ `{adaevolve, engram, openevolve}`.
 **Template:**
 
 ```bash
-python aichilles_risk_discovery/run_all_v2.py \
+python aichilles_risk_discovery/run_all_app.py \
   --app <app> \
   --best_program benchmarks/ADRS/<app>/best/claude/adaevolve/best_program.py \
   --budget 200 --patience 5
@@ -135,7 +131,7 @@ cd benchmarks/ADRS/llm_sql && bash download_dataset.sh && cd -
 
 ---
 
-## ⚙️ All flags (`run_all_v2.py`)
+## ⚙️ All flags (`run_all_app.py`)
 
 | Flag | Default | Description |
 |:---|:---|:---|
@@ -174,7 +170,7 @@ The per-app **knowledge base** (persists across runs and warm-starts the next on
 
 ```bash
 # Resume an interrupted Agent 2 (reuse the same grammar.json)
-python aichilles_risk_discovery/run_all_v2.py \
+python aichilles_risk_discovery/run_all_app.py \
   --app eplb \
   --best_program benchmarks/ADRS/eplb/best/claude/adaevolve/best_program.py \
   --skip_agent1 \

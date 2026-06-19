@@ -69,3 +69,7 @@ aichilles_risk_discovery/old_results/
 *.tex
 *.csv
 .hypothesis/
+
+# Keep README assets (logo, overview figure) despite the *.png rule above
+!assets/
+!assets/*.png
