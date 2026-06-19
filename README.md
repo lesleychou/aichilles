@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="assets/aichilles_logo.png" alt="AIChilles logo" height="130"><br>
+  <img src="assets/aichilles_logo.png" alt="AIChilles logo" height="160"><br>
   AIChilles Risk Discovery
 </h1>
 
