@@ -22,7 +22,6 @@
 and surfaces the workloads where `P'` quietly goes wrong — crashes, worse targeted performance, blow-ups in
 time, or blow-ups in memory.
 
-We support 5 system apps come from the SkyDiscover [ADRS benchmark](https://github.com/skydiscover-ai/skydiscover/tree/main/benchmarks/ADRS).
 ---
 
 ## ✨ Highlights
@@ -39,7 +38,7 @@ We support 5 system apps come from the SkyDiscover [ADRS benchmark](https://gith
 
 ---
 
-## 🐞 The four weakness types
+## 🐞 Four weakness types
 
 Each oracle call compares `P'` against the reference `P` on the same workload and flags any of:
 
@@ -80,7 +79,7 @@ Results land in `aichilles_risk_discovery/results/eplb/eplb_<timestamp>/` — op
 
 ## ▶️ Running on each app
 
-The pipeline ships with **5 ADRS apps** (from the SkyDiscover
+The pipeline ships with **5 system applictaions** (from the SkyDiscover
 [ADRS benchmark](https://github.com/skydiscover-ai/skydiscover/tree/main/benchmarks/ADRS)).
 The `--best_program` path follows the pattern
 `benchmarks/ADRS/<app>/best/<model>/<method>/best_program.py`, where `<model>` ∈ `{claude, gpt}`
