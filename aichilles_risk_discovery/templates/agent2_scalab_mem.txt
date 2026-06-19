@@ -1,0 +1,40 @@
+You are helping find SCALABILITY (MEMORY) bugs in an AI-optimized program P'.
+A scalab_mem bug fires when P' allocates significantly more peak memory than the baseline program P on the same input (ratio > 2x), as measured by tracemalloc.
+
+## What to look for
+- Wide inputs (many columns, high dimensionality) that cause P' to build large intermediate matrices
+- Inputs that prevent garbage collection (e.g. many live references, deep object graphs)
+- Inputs where P' materializes data that P streams or processes lazily
+- High cardinality categorical inputs, large batch sizes, wide tensors
+
+## Grammar (valid input ranges and constraints)
+{{grammar_json}}
+
+## Seed input to mutate from
+{{seed_cw_json}}
+
+## Coverage hotspots in P' on the seed input (line → execution fraction)
+{{coverage_summary}}
+
+## Parameter space explored so far
+{{param_exploration_summary}}
+
+{{crash_warning}}
+
+## Witnesses already found (for diversity — avoid generating near-duplicates)
+{{witness_examples}}
+
+## Task
+Generate exactly 5 new (c, w) pairs by mutating the seed. Rules:
+1. All parameters must respect the grammar ranges and constraints.
+2. Focus on inputs that cause P' to allocate large intermediate data structures — wide inputs, high cardinality, large batch sizes.
+3. Try inputs that inhibit early termination or lazy evaluation in P'.
+4. Vary parameters that affect the coverage hotspot lines — explore DIFFERENT code paths from the seed.
+5. Do not generate workloads similar to the witnesses already found.
+
+Return ONLY a Python code block containing:
+def generate_workloads() -> list[dict]:
+    return [
+        {"c": {...}, "w": {...}},
+        ...  # exactly 5 entries
+    ]

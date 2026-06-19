@@ -1,0 +1,475 @@
+{
+  "num_islands": 2,
+  "current_island": 1,
+  "iteration_count": 34,
+  "global_best_score": 0.6917461630143811,
+  "decay": 0.9,
+  "intensity_min": 0.15,
+  "intensity_max": 0.5,
+  "migration_interval": 15,
+  "diversity_strategy_type": "code",
+  "use_unified_archive": true,
+  "use_adaptive_search": true,
+  "use_ucb_selection": true,
+  "fixed_intensity": 0.4,
+  "adapter": {
+    "states": [
+      {
+        "accumulated_signal": 0.0900078545214067,
+        "best_score": 0.6917461630143811,
+        "improvement_count": 2,
+        "total_evaluations": 20,
+        "decay": 0.9,
+        "epsilon": 1e-08,
+        "intensity_min": 0.15,
+        "intensity_max": 0.5
+      },
+      {
+        "accumulated_signal": 0.0900078545214067,
+        "best_score": 0.6917461630143811,
+        "improvement_count": 1,
+        "total_evaluations": 20,
+        "decay": 0.9,
+        "epsilon": 1e-08,
+        "intensity_min": 0.15,
+        "intensity_max": 0.5
+      }
+    ],
+    "dimension_visits": [
+      20,
+      20
+    ],
+    "dimension_rewards": [
+      0.13890021917727927,
+      0.006404059835329291
+    ],
+    "decayed_visits": [
+      8.784233454094307,
+      8.784233454094307
+    ],
+    "global_best_score": 0.6917461630143811,
+    "ucb_exploration": 1.41,
+    "min_visits": 3,
+    "decay": 0.9,
+    "epsilon": 1e-08
+  },
+  "island_config_names": [
+    "balanced",
+    "balanced"
+  ],
+  "islands": [
+    [
+      "40269919-3e44-48e0-b580-2da6d6f5c16a",
+      "684a3f4d-32f3-41af-9fb3-1f63f1822a83",
+      "ee4e1778-4874-4c39-93d9-86b21e53d14f",
+      "65a058a5-635f-4e80-9b37-ec5377dbdb3e",
+      "fe8bff5f-638f-4b58-b939-9efafc7dc269",
+      "859767f4-6b65-456d-8404-d1b76474e4df",
+      "b3a10e76-d585-4c87-a86d-5026f8c76974",
+      "1f4b5ac1-cb03-4805-b750-1c46f26ea224",
+      "9e238bf0-b133-4376-9453-4d83efde5d23",
+      "f0dd4d1e-45a7-4a3e-aae6-a0855ce14bc4",
+      "9720cc1c-2644-45a4-abfb-2e4256cc0b68",
+      "366fcaf8-4290-4423-8252-498dea2fd166",
+      "254f5ea5-2719-40c1-aa10-eefab1db950d",
+      "436b2033-cc07-42fc-8777-fa4bcc584c3b",
+      "009a6da0-7a67-4569-bf2a-a6b9bfbf68eb",
+      "8377a9a5-00f7-4cc5-96f5-7e45ae1c507b",
+      "27c8cef5-9e1b-4ee5-ad39-cab4ab5a8df7",
+      "29f59650-6d37-4935-874d-43280dc5d070",
+      "f9c298a2-cd76-4e5d-92e9-05ac5d95e09b",
+      "57e15849-9194-4f8e-8df9-741e9ace62ed"
+    ],
+    [
+      "7cf3d55e-d841-4d4b-bd2a-e564cb6af3e5",
+      "88865a3e-f89a-45a4-81c8-597dfbf4ca53",
+      "720b4820-714a-48a7-8f2f-396138b506bf",
+      "aad11084-248d-4634-ad99-0f7d45045e77",
+      "4d2767f4-24aa-4840-b08f-c787eacb009d",
+      "bbcaf0cd-616f-4f33-8154-ec371a14d386",
+      "d0fb05a5-9b86-45d9-9424-eec6a01eb1ed",
+      "52226d5f-c8bf-4787-aaf2-b46f879180b1",
+      "99f3a28d-826b-420e-8f99-7c1af58d4ad7",
+      "c6c72a6e-af7d-4947-8633-8dcbfe1e0b07",
+      "36a606b1-d33f-416d-a80c-a9a8531cfb36",
+      "b065a44f-4eb3-4d53-a96a-5c41105094ee",
+      "96610c95-4025-4769-9ed8-6082b2d40d53",
+      "8c268749-f6e8-40d9-b55a-47adefa8aa32",
+      "1f0e1cba-f523-4f21-8143-e87b6c2bc639",
+      "184dc09c-4242-4511-99f7-534f8e0ff88b",
+      "007f5dc4-5b82-4547-a355-888793573f77",
+      "ac66ba33-b78b-40ea-9fa8-96456a0f9b79",
+      "b7025c7a-76b9-4b19-b493-b6f44cc31aa0",
+      "b0f16a08-bc52-4f05-b713-0bc7073e48c7"
+    ]
+  ],
+  "archive_genealogies": [
+    {
+      "parents": {
+        "40269919-3e44-48e0-b580-2da6d6f5c16a": [],
+        "684a3f4d-32f3-41af-9fb3-1f63f1822a83": [
+          "40269919-3e44-48e0-b580-2da6d6f5c16a"
+        ],
+        "ee4e1778-4874-4c39-93d9-86b21e53d14f": [
+          "684a3f4d-32f3-41af-9fb3-1f63f1822a83"
+        ],
+        "65a058a5-635f-4e80-9b37-ec5377dbdb3e": [
+          "40269919-3e44-48e0-b580-2da6d6f5c16a"
+        ],
+        "fe8bff5f-638f-4b58-b939-9efafc7dc269": [
+          "65a058a5-635f-4e80-9b37-ec5377dbdb3e"
+        ],
+        "859767f4-6b65-456d-8404-d1b76474e4df": [
+          "65a058a5-635f-4e80-9b37-ec5377dbdb3e"
+        ],
+        "b3a10e76-d585-4c87-a86d-5026f8c76974": [
+          "40269919-3e44-48e0-b580-2da6d6f5c16a"
+        ],
+        "1f4b5ac1-cb03-4805-b750-1c46f26ea224": [
+          "40269919-3e44-48e0-b580-2da6d6f5c16a"
+        ],
+        "9e238bf0-b133-4376-9453-4d83efde5d23": [
+          "40269919-3e44-48e0-b580-2da6d6f5c16a"
+        ],
+        "f0dd4d1e-45a7-4a3e-aae6-a0855ce14bc4": [
+          "4d2767f4-24aa-4840-b08f-c787eacb009d"
+        ],
+        "9720cc1c-2644-45a4-abfb-2e4256cc0b68": [
+          "40269919-3e44-48e0-b580-2da6d6f5c16a"
+        ],
+        "366fcaf8-4290-4423-8252-498dea2fd166": [
+          "40269919-3e44-48e0-b580-2da6d6f5c16a"
+        ],
+        "254f5ea5-2719-40c1-aa10-eefab1db950d": [
+          "40269919-3e44-48e0-b580-2da6d6f5c16a"
+        ],
+        "436b2033-cc07-42fc-8777-fa4bcc584c3b": [
+          "254f5ea5-2719-40c1-aa10-eefab1db950d"
+        ],
+        "009a6da0-7a67-4569-bf2a-a6b9bfbf68eb": [
+          "254f5ea5-2719-40c1-aa10-eefab1db950d"
+        ],
+        "8377a9a5-00f7-4cc5-96f5-7e45ae1c507b": [
+          "254f5ea5-2719-40c1-aa10-eefab1db950d"
+        ],
+        "27c8cef5-9e1b-4ee5-ad39-cab4ab5a8df7": [
+          "254f5ea5-2719-40c1-aa10-eefab1db950d"
+        ],
+        "29f59650-6d37-4935-874d-43280dc5d070": [
+          "254f5ea5-2719-40c1-aa10-eefab1db950d"
+        ],
+        "f9c298a2-cd76-4e5d-92e9-05ac5d95e09b": [
+          "254f5ea5-2719-40c1-aa10-eefab1db950d"
+        ],
+        "57e15849-9194-4f8e-8df9-741e9ace62ed": [
+          "254f5ea5-2719-40c1-aa10-eefab1db950d"
+        ]
+      },
+      "children": {
+        "40269919-3e44-48e0-b580-2da6d6f5c16a": [
+          "684a3f4d-32f3-41af-9fb3-1f63f1822a83",
+          "65a058a5-635f-4e80-9b37-ec5377dbdb3e",
+          "b3a10e76-d585-4c87-a86d-5026f8c76974",
+          "1f4b5ac1-cb03-4805-b750-1c46f26ea224",
+          "9e238bf0-b133-4376-9453-4d83efde5d23",
+          "9720cc1c-2644-45a4-abfb-2e4256cc0b68",
+          "366fcaf8-4290-4423-8252-498dea2fd166",
+          "254f5ea5-2719-40c1-aa10-eefab1db950d"
+        ],
+        "684a3f4d-32f3-41af-9fb3-1f63f1822a83": [
+          "ee4e1778-4874-4c39-93d9-86b21e53d14f"
+        ],
+        "65a058a5-635f-4e80-9b37-ec5377dbdb3e": [
+          "fe8bff5f-638f-4b58-b939-9efafc7dc269",
+          "859767f4-6b65-456d-8404-d1b76474e4df"
+        ],
+        "4d2767f4-24aa-4840-b08f-c787eacb009d": [
+          "f0dd4d1e-45a7-4a3e-aae6-a0855ce14bc4"
+        ],
+        "254f5ea5-2719-40c1-aa10-eefab1db950d": [
+          "436b2033-cc07-42fc-8777-fa4bcc584c3b",
+          "009a6da0-7a67-4569-bf2a-a6b9bfbf68eb",
+          "8377a9a5-00f7-4cc5-96f5-7e45ae1c507b",
+          "27c8cef5-9e1b-4ee5-ad39-cab4ab5a8df7",
+          "29f59650-6d37-4935-874d-43280dc5d070",
+          "f9c298a2-cd76-4e5d-92e9-05ac5d95e09b",
+          "57e15849-9194-4f8e-8df9-741e9ace62ed"
+        ]
+      }
+    },
+    {
+      "parents": {
+        "7cf3d55e-d841-4d4b-bd2a-e564cb6af3e5": [],
+        "88865a3e-f89a-45a4-81c8-597dfbf4ca53": [
+          "7cf3d55e-d841-4d4b-bd2a-e564cb6af3e5"
+        ],
+        "720b4820-714a-48a7-8f2f-396138b506bf": [
+          "7cf3d55e-d841-4d4b-bd2a-e564cb6af3e5"
+        ],
+        "aad11084-248d-4634-ad99-0f7d45045e77": [
+          "720b4820-714a-48a7-8f2f-396138b506bf"
+        ],
+        "4d2767f4-24aa-4840-b08f-c787eacb009d": [
+          "7cf3d55e-d841-4d4b-bd2a-e564cb6af3e5"
+        ],
+        "bbcaf0cd-616f-4f33-8154-ec371a14d386": [
+          "40269919-3e44-48e0-b580-2da6d6f5c16a"
+        ],
+        "d0fb05a5-9b86-45d9-9424-eec6a01eb1ed": [
+          "40269919-3e44-48e0-b580-2da6d6f5c16a"
+        ],
+        "52226d5f-c8bf-4787-aaf2-b46f879180b1": [
+          "40269919-3e44-48e0-b580-2da6d6f5c16a"
+        ],
+        "99f3a28d-826b-420e-8f99-7c1af58d4ad7": [
+          "684a3f4d-32f3-41af-9fb3-1f63f1822a83"
+        ],
+        "c6c72a6e-af7d-4947-8633-8dcbfe1e0b07": [
+          "859767f4-6b65-456d-8404-d1b76474e4df"
+        ],
+        "36a606b1-d33f-416d-a80c-a9a8531cfb36": [
+          "1f4b5ac1-cb03-4805-b750-1c46f26ea224"
+        ],
+        "b065a44f-4eb3-4d53-a96a-5c41105094ee": [
+          "9e238bf0-b133-4376-9453-4d83efde5d23"
+        ],
+        "96610c95-4025-4769-9ed8-6082b2d40d53": [
+          "254f5ea5-2719-40c1-aa10-eefab1db950d"
+        ],
+        "8c268749-f6e8-40d9-b55a-47adefa8aa32": [
+          "254f5ea5-2719-40c1-aa10-eefab1db950d"
+        ],
+        "1f0e1cba-f523-4f21-8143-e87b6c2bc639": [
+          "254f5ea5-2719-40c1-aa10-eefab1db950d"
+        ],
+        "184dc09c-4242-4511-99f7-534f8e0ff88b": [
+          "254f5ea5-2719-40c1-aa10-eefab1db950d"
+        ],
+        "007f5dc4-5b82-4547-a355-888793573f77": [
+          "254f5ea5-2719-40c1-aa10-eefab1db950d"
+        ],
+        "ac66ba33-b78b-40ea-9fa8-96456a0f9b79": [
+          "254f5ea5-2719-40c1-aa10-eefab1db950d"
+        ],
+        "b7025c7a-76b9-4b19-b493-b6f44cc31aa0": [
+          "254f5ea5-2719-40c1-aa10-eefab1db950d"
+        ],
+        "b0f16a08-bc52-4f05-b713-0bc7073e48c7": [
+          "254f5ea5-2719-40c1-aa10-eefab1db950d"
+        ]
+      },
+      "children": {
+        "7cf3d55e-d841-4d4b-bd2a-e564cb6af3e5": [
+          "88865a3e-f89a-45a4-81c8-597dfbf4ca53",
+          "720b4820-714a-48a7-8f2f-396138b506bf",
+          "4d2767f4-24aa-4840-b08f-c787eacb009d"
+        ],
+        "720b4820-714a-48a7-8f2f-396138b506bf": [
+          "aad11084-248d-4634-ad99-0f7d45045e77"
+        ],
+        "40269919-3e44-48e0-b580-2da6d6f5c16a": [
+          "bbcaf0cd-616f-4f33-8154-ec371a14d386",
+          "d0fb05a5-9b86-45d9-9424-eec6a01eb1ed",
+          "52226d5f-c8bf-4787-aaf2-b46f879180b1"
+        ],
+        "684a3f4d-32f3-41af-9fb3-1f63f1822a83": [
+          "99f3a28d-826b-420e-8f99-7c1af58d4ad7"
+        ],
+        "859767f4-6b65-456d-8404-d1b76474e4df": [
+          "c6c72a6e-af7d-4947-8633-8dcbfe1e0b07"
+        ],
+        "1f4b5ac1-cb03-4805-b750-1c46f26ea224": [
+          "36a606b1-d33f-416d-a80c-a9a8531cfb36"
+        ],
+        "9e238bf0-b133-4376-9453-4d83efde5d23": [
+          "b065a44f-4eb3-4d53-a96a-5c41105094ee"
+        ],
+        "254f5ea5-2719-40c1-aa10-eefab1db950d": [
+          "96610c95-4025-4769-9ed8-6082b2d40d53",
+          "8c268749-f6e8-40d9-b55a-47adefa8aa32",
+          "1f0e1cba-f523-4f21-8143-e87b6c2bc639",
+          "184dc09c-4242-4511-99f7-534f8e0ff88b",
+          "007f5dc4-5b82-4547-a355-888793573f77",
+          "ac66ba33-b78b-40ea-9fa8-96456a0f9b79",
+          "b7025c7a-76b9-4b19-b493-b6f44cc31aa0",
+          "b0f16a08-bc52-4f05-b713-0bc7073e48c7"
+        ]
+      }
+    }
+  ],
+  "use_dynamic_islands": true,
+  "max_islands": 5,
+  "last_spawn_iteration": -30,
+  "use_paradigm_breakthrough": true,
+  "paradigm_tracker": {
+    "window_size": 10,
+    "improvement_threshold": 0.12,
+    "max_paradigm_uses": 2,
+    "max_tried_paradigms": 10,
+    "num_paradigms_to_generate": 3,
+    "improvement_history": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "active_paradigms": [
+      {
+        "idea": "Use scipy.optimize.linear_sum_assignment for optimal row-to-row matching with prefix-aware cost matrix",
+        "description": "Construct a cost matrix where cost[i][j] represents the NEGATIVE expected prefix hit score if row i follows row j. For each pair (i,j), compute the maximum possible prefix hit by: (1) identifying which columns match between rows i and j, (2) ordering those matching columns by descending value length to maximize prefix score, (3) summing len(value)^2 for the optimal prefix. Use scipy.optimize.linear_sum_assignment to find the optimal row permutation that maximizes total prefix hits across consecutive pairs. This differs from previous TSP approaches by using assignment-based formulation with exact prefix scoring rather than generic distance metrics. Process in chunks if dataset is large (>5000 rows) to maintain runtime efficiency.",
+        "what_to_optimize": "Maximize total prefix hit score by optimally ordering rows such that consecutive rows share maximum prefix potential, while maintaining O(n^2) complexity for cost computation",
+        "cautions": "Cost matrix must accurately compute achievable prefix hits (not just column overlap count). Handle chunks properly to avoid memory issues. Ensure the assignment creates a valid sequence (may need to post-process into a tour). Cache value lengths and precompute column match matrices for efficiency.",
+        "approach_type": "scipy.optimize.linear_sum_assignment"
+      },
+      {
+        "idea": "Use scipy.cluster.hierarchy.fclusterdata with custom metric to create row clusters, then order within clusters",
+        "description": "Design a custom distance metric that measures 'prefix incompatibility' between rows: distance = sum(len(v1[c])^2 if v1[c]!=v2[c] else 0) across columns, weighted by column value frequency. Use scipy.cluster.hierarchy.fclusterdata with method='average' and this metric to group rows with high prefix potential together. Within each cluster, apply the current DP column ordering strategy but with enhanced lookahead. Order clusters by their centroid characteristics (most common values with highest frequency*length product). This creates a two-level optimization: global cluster structure + local DP refinement. Unlike previous failed hierarchy attempts, this uses prefix-specific distance and maintains DP for column ordering.",
+        "what_to_optimize": "Create natural row groupings that maximize intra-cluster prefix reuse, then optimize column ordering within stable groups to achieve higher sustained prefix hits",
+        "cautions": "Custom metric must be symmetric and return scalar distances. Choose appropriate cluster count (sqrt(n_rows) as heuristic). Balance cluster granularity vs prefix optimization. Ensure metric computation is vectorized for speed. May need to standardize distances to prevent numeric issues.",
+        "approach_type": "scipy.cluster.hierarchy.fclusterdata"
+      },
+      {
+        "idea": "Use scipy.sparse.csgraph.shortest_path with prefix-weighted graph to find optimal row traversal sequence",
+        "description": "Build a directed weighted graph where each row is a node and edge weight from row i to j equals the NEGATIVE maximum achievable prefix hit score (computed as: identify matching columns, order by descending value length, sum len(value)^2 for prefix). Use scipy.sparse representation for memory efficiency. Apply scipy.sparse.csgraph.shortest_path with method='D' (Dijkstra) from multiple start nodes to find paths that maximize prefix reuse. Unlike TSP approximation (which failed), this uses shortest path algorithms with proper prefix-based edge weights. Select the path with minimum total cost (maximum prefix hits). For large datasets, use sampling: find optimal ordering for representative rows (e.g., every 10th row), then insert remaining rows greedily at positions that maximize their prefix contribution.",
+        "what_to_optimize": "Find globally optimal row sequence that maximizes cumulative prefix hits by formulating as shortest path problem with negative prefix-score weights",
+        "cautions": "Edge weights must be negative prefix scores for shortest path to maximize hits. Handle disconnected components if they arise. Use sparse matrices (scipy.sparse.lil_matrix during construction, convert to csr for computation). May need multiple shortest path computations from different sources. Ensure the result forms a valid sequence (Hamiltonian path), not just disconnected optimal subpaths.",
+        "approach_type": "scipy.sparse.csgraph.shortest_path"
+      }
+    ],
+    "paradigm_usage_counts": {
+      "0": 1,
+      "1": 1
+    },
+    "current_paradigm_index": 2,
+    "tried_paradigms": [
+      {
+        "idea": "Traveling Salesman Problem formulation using scipy.optimize.linear_sum_assignment with chunked decomposition",
+        "description": "Frame the row ordering problem as a variant of TSP where we want to find an ordering of rows that maximizes total prefix matches between consecutive rows. For manageable chunks (\u22642000 rows), compute a cost matrix C where C[i,j] is the negative of the prefix hit score if row i is followed by row j. Use scipy.optimize.linear_sum_assignment to find an optimal assignment (each row assigned to a position). This gives a permutation of rows. For column ordering, after getting row permutation, iterate through consecutive row pairs and greedily order each row's columns to maximize prefix match with previous row. For large datasets, use hierarchical decomposition: partition rows into clusters using k-means on row feature vectors (e.g., value frequencies), solve TSP within each cluster, then chain clusters. This combines global optimization (assignment problem) with local greedy column ordering.",
+        "what_to_optimize": "Maximize total prefix hit count across all consecutive row pairs by finding optimal row ordering through assignment problem, then optimize column ordering greedily. Balance solution quality with runtime by using chunked processing for large datasets.",
+        "cautions": "linear_sum_assignment solves assignment problems, not directly TSP. Use it to assign rows to positions in sequence by formulating cost matrix carefully. Compute prefix hit scores efficiently using vectorized operations. For n>5000, use clustering to reduce problem size. Handle cases where cost matrix computation is expensive by using approximations or sampling. Ensure the assignment produces a valid permutation without cycles. May need to add constraints or use iterative refinement.",
+        "approach_type": "scipy.optimize.linear_sum_assignment",
+        "uses": 2,
+        "starting_score": 0.6856693675646635,
+        "ending_score": 0.6856693675646635,
+        "score_improvement": 0.0,
+        "outcome": "FAILED"
+      },
+      {
+        "idea": "Dynamic Programming with prefix-aware column ordering using numpy vectorization",
+        "description": "Instead of recursive grouping, use a dynamic programming approach where for each row, we compute the optimal column ordering based on the previous row's values. Precompute a similarity matrix between all rows using numpy operations (element-wise equality checks). For each row i, calculate which columns from row i match row i-1, then use a greedy selection: prioritize columns where values match previous row AND have high frequency in remaining rows. Use numpy.where and boolean indexing for fast lookups. Maintain a running 'prefix context' - the columns already ordered for the previous row. For row i, start with columns that extend the previous prefix, then add high-value columns. Use vectorized operations to compute column scores: score = (match_with_prev * len(value)^2 * remaining_frequency). Sort columns by this score. This is fundamentally different from GGR as it's sequential and prefix-continuation focused, not recursive grouping.",
+        "what_to_optimize": "Maximize prefix hit by explicitly considering row-to-row transitions. Speed up with numpy vectorization instead of pandas operations and eliminate recursive overhead.",
+        "cautions": "Precompute value lengths and frequencies once. Use numpy arrays for similarity computation. Avoid Python loops over rows - use vectorized operations where possible. Handle edge cases where no columns match previous row. Consider using numba.jit for the core scoring loop if needed. Ensure column ordering is stored efficiently (list of lists or numpy array).",
+        "approach_type": "numpy.vectorize",
+        "uses": 2,
+        "starting_score": 0.6856693675646635,
+        "ending_score": 0.6917461630143811,
+        "score_improvement": 0.00607679544971762,
+        "outcome": "SUCCESS"
+      },
+      {
+        "idea": "Graph-based ordering with NetworkX using maximum weighted matching on row adjacency",
+        "description": "Model the problem as a graph where nodes are rows and edges connect consecutive rows with weights = potential prefix hit score. Build a directed graph where each row i has edges to candidate orderings for row i+1. Use NetworkX to find optimal paths. Specifically: (1) For each row pair (i, i+1), compute which columns have matching values - this gives potential prefix. (2) Create a bipartite graph between 'column positions' and 'columns' for each row, with weights = value_length^2 * (1 if matches_previous else frequency_bonus). (3) Use NetworkX's max_weight_matching or Hungarian algorithm via scipy.optimize.linear_sum_assignment to assign columns to positions for each row. (4) Process rows sequentially, each time solving an assignment problem where matching previous row's prefix columns gets bonus weight. This is fundamentally different - it's an assignment optimization problem, not greedy grouping.",
+        "what_to_optimize": "Optimize the assignment of columns to positions for each row to maximize weighted prefix matches. The assignment problem naturally handles the constraint that each column appears once.",
+        "cautions": "Use scipy.optimize.linear_sum_assignment (Hungarian algorithm) for each row's column assignment, not NetworkX's general matching which is slower. Precompute all pairwise row similarities. Weight function must balance: high weight for extending previous prefix, medium weight for long frequent values, low weight otherwise. Process rows in their original order initially, but consider sorting by similarity clusters first. Ensure the assignment matrix is properly constructed with negative weights since linear_sum_assignment minimizes.",
+        "approach_type": "scipy.optimize.linear_sum_assignment",
+        "uses": 2,
+        "starting_score": 0.6856693675646635,
+        "ending_score": 0.6917461630143811,
+        "score_improvement": 0.00607679544971762,
+        "outcome": "SUCCESS"
+      },
+      {
+        "idea": "Spectral clustering with eigenvalue-based column ordering using scipy.linalg",
+        "description": "Use spectral methods to find inherent structure in the data that maximizes prefix reuse. (1) Construct a column-column affinity matrix where entry (i,j) = sum over all row pairs of (value_i == value_j) * len(value_i) * len(value_j). This captures which columns tend to have matching values across rows. (2) Compute the Laplacian matrix and find its eigenvectors using scipy.linalg.eigh. (3) Use the Fiedler vector (2nd smallest eigenvalue's eigenvector) to order columns - columns with similar eigenvector values should be adjacent. (4) For each row, use this global spectral ordering as the base, but locally adjust: if a column's value matches the previous row, boost it to the front. Use scipy.signal.argrelextrema to find natural breakpoints in the eigenvector for clustering columns. This is fundamentally different - it's a global spectral analysis followed by local adjustments, not greedy recursive grouping or assignment problems.",
+        "what_to_optimize": "Find global column structure that naturally groups co-occurring values, then exploit this structure for sequential row processing. Balance global spectral order with local prefix continuation.",
+        "cautions": "Ensure the affinity matrix is symmetric and positive semi-definite. Use scipy.linalg.eigh not eig for symmetric matrices (faster and more stable). Handle the case where multiple eigenvectors have similar eigenvalues - use top k eigenvectors for k-means clustering of columns. For each row, the base ordering comes from spectral analysis, then apply local greedy adjustment: move columns matching previous row to front. Normalize eigenvectors properly. Consider using sparse matrices (scipy.sparse) if the dataset is large.",
+        "approach_type": "scipy.linalg.eigh",
+        "uses": 2,
+        "starting_score": 0.6856693675646635,
+        "ending_score": 0.6917461630143811,
+        "score_improvement": 0.00607679544971762,
+        "outcome": "SUCCESS"
+      },
+      {
+        "idea": "Use scipy.cluster.hierarchy with custom linkage to globally optimize row ordering via hierarchical clustering",
+        "description": "The current program optimizes column ordering per row but uses simplistic row pre-sorting. Instead, use hierarchical clustering on rows based on pairwise similarity (weighted by value length squared) to find globally optimal row sequences. Compute pairwise distance matrix where distance = sum of (max_len - matching_len)\u00b2 for all column pairs. Use scipy.cluster.hierarchy.linkage with 'complete' method to build dendrogram, then extract optimal leaf ordering that minimizes distances between adjacent rows. This creates contiguous blocks of similar rows. For column ordering within each row, keep the prefix-aware greedy approach but apply it to the optimally ordered rows. The key innovation is global row optimization via clustering rather than local greedy pre-sorting.",
+        "what_to_optimize": "Global row sequence to maximize prefix hits across consecutive rows; combined_score via better hit_rate",
+        "cautions": "Distance matrix computation can be expensive for large datasets - use sparse representation or sampling. Use scipy.cluster.hierarchy.optimal_leaf_ordering for better sequence. Ensure distance metric properly weights value lengths squared to align with scoring. May need to process in chunks for very large datasets.",
+        "approach_type": "scipy.cluster.hierarchy.linkage",
+        "uses": 2,
+        "starting_score": 0.6917461630143811,
+        "ending_score": 0.6917461630143811,
+        "score_improvement": 0.0,
+        "outcome": "FAILED"
+      },
+      {
+        "idea": "Use networkx.algorithms.approximation.traveling_salesman_problem with row-similarity graph for optimal sequencing",
+        "description": "Frame row ordering as a graph problem where nodes are rows and edge weights represent prefix hit potential. Build complete graph where edge weight between rows i and j equals the negative sum of (value_length)\u00b2 for all matching columns (negative because TSP minimizes). Use NetworkX's Christofides algorithm approximation (networkx.algorithms.approximation.traveling_salesman_problem) to find near-optimal row sequence that maximizes consecutive row similarity. This is fundamentally different from previous TSP attempts: (1) use approximation algorithm not exact assignment, (2) weight by actual value lengths squared not binary similarity, (3) handle full row sequences not chunks. After optimal row ordering, apply adaptive column ordering per row based on previous row prefix continuation. This combines global row optimization with local column adaptation.",
+        "what_to_optimize": "Global row sequence via TSP approximation to maximize total prefix hits; combined_score through significantly improved hit_rate",
+        "cautions": "Graph construction with n\u00b2 edges can be memory intensive - use sparse matrix or sample for very large n. Christofides gives 1.5-approximation guarantee. Precompute value lengths to speed up edge weight calculation. Consider using threshold to create sparse graph (only connect rows with sufficient similarity). May need chunking for datasets >10k rows.",
+        "approach_type": "networkx.algorithms.approximation.traveling_salesman_problem",
+        "uses": 2,
+        "starting_score": 0.6917461630143811,
+        "ending_score": 0.6917461630143811,
+        "score_improvement": 0.0,
+        "outcome": "FAILED"
+      },
+      {
+        "idea": "Use scipy.sparse.csgraph.minimum_spanning_tree to identify row clusters and optimal traversal order",
+        "description": "Represent rows as graph nodes with edge weights = negative prefix hit score potential between row pairs. Compute minimum spanning tree using scipy.sparse.csgraph.minimum_spanning_tree to identify natural row clusters with high internal similarity. The MST reveals the optimal connectivity structure. Then perform depth-first traversal of the MST using scipy.sparse.csgraph.depth_first_order to get row sequence that stays within clusters as long as possible, maximizing consecutive row similarity. This is efficient (O(n log n)) unlike TSP and finds global structure unlike local greedy methods. Key innovation: MST captures the natural clustering structure of data while DFS traversal ensures we exploit it for sequential processing. Use value_length\u00b2 weighted similarity for edges. After optimal row ordering, apply the existing prefix-aware column ordering logic.",
+        "what_to_optimize": "Global row clustering and traversal order to maximize prefix reuse; combined_score via improved hit_rate with reasonable runtime",
+        "cautions": "Build sparse similarity matrix efficiently - only compute edges above similarity threshold. Use scipy.sparse.csr_matrix format. Ensure edge weights use actual value lengths squared. DFS traversal might need tie-breaking for multiple children - choose based on subtree similarity. This should be faster than TSP while still finding good global structure.",
+        "approach_type": "scipy.sparse.csgraph.minimum_spanning_tree",
+        "uses": 2,
+        "starting_score": 0.6917461630143811,
+        "ending_score": 0.6917461630143811,
+        "score_improvement": 0.0,
+        "outcome": "FAILED"
+      },
+      {
+        "idea": "Multi-pass row clustering with scipy.cluster.hierarchy for globally optimal row grouping",
+        "description": "The current pre-sort only uses 3 columns. Instead, use hierarchical clustering on full row feature vectors (weighted by value length\u00b2) to globally optimize row adjacency. Compute pairwise row similarity as sum of length\u00b2 for all matching values. Use scipy.cluster.hierarchy.linkage with 'average' method to build dendrogram, then scipy.cluster.hierarchy.fcluster to get ordering. Within each cluster, order rows by local prefix maximization. This targets the 95% accuracy component by ensuring rows with high potential overlap are adjacent, rather than relying on simple column-based sorting.",
+        "what_to_optimize": "Row ordering to maximize consecutive row similarity, which directly increases prefix hit opportunities across the entire dataset",
+        "cautions": "Use efficient linkage computation (only compute similarities for non-identical rows). Set cluster count adaptively based on data sparsity. For large datasets, use sampling or mini-batch clustering. Cache similarity computations. Ensure final ordering respects cluster structure while maintaining intra-cluster optimization.",
+        "approach_type": "scipy.cluster.hierarchy.linkage",
+        "uses": 2,
+        "starting_score": 0.6917461630143811,
+        "ending_score": 0.6917461630143811,
+        "score_improvement": 0.0,
+        "outcome": "FAILED"
+      },
+      {
+        "idea": "Optimal prefix break-point selection using dynamic programming on column subsets",
+        "description": "Current approach independently orders matching vs non-matching columns. Instead, for each row, enumerate possible prefix lengths k (where to place the break between matching and non-matching columns). For each k, solve: which k matching columns maximize sum of their length\u00b2, and which first non-matching column maximizes its own length\u00b2 \u00d7 future_frequency. Use DP to compute: dp[k] = max score for prefix of length k. This requires computing all combinations of k columns from matching set, scoring as sum(len\u00b2) + best_non_matching_column. Select k that maximizes dp[k]. Use numpy.argpartition for efficient top-k selection without full sorting.",
+        "what_to_optimize": "Joint optimization of prefix length and column selection within prefix to maximize squared length sum, accounting for where prefix will break",
+        "cautions": "Limit k to reasonable range (e.g., min(10, num_matching_cols)) to avoid combinatorial explosion. Use numpy operations for vectorized scoring. Pre-compute length\u00b2 values. Cache column subset scores. For rows with many matches, use greedy approximation with local search refinement rather than full enumeration.",
+        "approach_type": "numpy.argpartition",
+        "uses": 2,
+        "starting_score": 0.6917461630143811,
+        "ending_score": 0.6917461630143811,
+        "score_improvement": 0.0,
+        "outcome": "FAILED"
+      },
+      {
+        "idea": "Markov Chain Monte Carlo row reordering with simulated annealing using scipy.optimize.dual_annealing",
+        "description": "Frame the problem as finding optimal global row permutation that maximizes total PHC. Define objective function as negative sum of all prefix hit scores across consecutive rows. Use scipy.optimize.dual_annealing with permutation-aware local search moves (swap, reverse, insert). Dual annealing combines fast simulated annealing with local search to escape local optima. For each row ordering candidate, compute column orderings using current greedy approach, then evaluate total PHC. Use bounds=[0, n_rows-1] for each position. Initialize with current pre-sorted solution. Set reasonable iteration budget (maxiter=1000 * n_rows). This optimizes the row ordering globally rather than with simple pre-sorting.",
+        "what_to_optimize": "Global row permutation to maximize sum of prefix hits across all consecutive row pairs, with per-row column optimization as subroutine",
+        "cautions": "Implement custom local move function for permutations (swap adjacent rows, reverse segments). Use visit=2.62 for faster convergence. Set no_local_search=False to enable local optimization. Vectorize PHC computation for candidate evaluation. For large datasets, use block-wise optimization (optimize 100-row chunks). Cache column ordering computations. Set initial_temp adaptively based on score variance.",
+        "approach_type": "scipy.optimize.dual_annealing",
+        "uses": 2,
+        "starting_score": 0.6917461630143811,
+        "ending_score": 0.6917461630143811,
+        "score_improvement": 0.0,
+        "outcome": "FAILED"
+      }
+    ],
+    "best_score_at_paradigm_gen": 0.6917461630143811,
+    "best_score_during_paradigm": 0.6917461630143811
+  }
+}

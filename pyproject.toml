@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aichilles-risk-discovery"
+version = "0.1.0"
+description = "Automatically find diverse weaknesses in AI-discovered (ADRS) programs."
+readme = "README.md"
+requires-python = ">=3.10, <3.14"
+license = { text = "Apache-2.0" }
+dependencies = [
+    # Pipeline (Agents 1–3 + plotting)
+    "anthropic>=0.40.0",
+    "numpy>=1.22.0",
+    "scipy>=1.11.0",
+    "matplotlib>=3.7",
+    # ADRS app runtime deps
+    "pandas>=2.0",            # llm_sql, cloudcast
+    "networkx>=3.2,<3.4",     # cloudcast, llm_sql
+    "torch>=2.0",             # eplb
+    "pulp>=2.7",              # cloudcast & prism (gpt/engram candidates)
+]
+
+[project.optional-dependencies]
+# cloudcast's get_path_cost() helper (not on the pipeline's hot path —
+# the pipeline reads cost from profiles/cost.csv) needs skyplane:
+cloudcast-skyplane = ["skyplane"]
+
+# Install dependencies only — the pipeline is run from source
+# (e.g. `python aichilles_risk_discovery/run_all_v2.py`), not imported as a package.
+[tool.setuptools]
+py-modules = []
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+[tool.isort]
+profile = "black"
+line_length = 100

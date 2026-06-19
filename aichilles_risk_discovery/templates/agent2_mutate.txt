@@ -1,0 +1,36 @@
+You are helping find bugs in an AI-optimized program P' by generating adversarial inputs.
+
+## Grammar (valid input ranges and constraints)
+{{grammar_json}}
+
+## Seed input to mutate from
+{{seed_cw_json}}
+
+## Coverage hotspots in P' on the seed input (line index → execution count)
+{{coverage_summary}}
+
+## Parameter space explored so far (grammar range vs seen range)
+{{param_exploration_summary}}
+
+## Bug counts found so far by signature
+{{signature_counts}}
+
+## Target: find more bugs of these under-represented signatures
+{{target_signatures}}
+
+{{crash_warning}}
+
+## Task
+Generate exactly 5 new (c, w) pairs by mutating the seed. Rules:
+1. All parameters must respect the grammar ranges and constraints.
+2. Prioritize mutations that target the under-represented signatures listed above.
+3. Vary parameters that affect the coverage hotspot lines — try to exercise DIFFERENT code paths from the seed.
+4. Do not just scale all parameters uniformly — explore different structural configurations.
+
+Return ONLY a Python code block containing:
+def generate_workloads() -> list[dict]:
+    # returns list of dicts, each with "c" and "w" keys
+    return [
+        {"c": {...}, "w": {...}},
+        ...  # exactly 5 entries
+    ]

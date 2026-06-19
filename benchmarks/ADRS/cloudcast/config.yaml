@@ -1,0 +1,65 @@
+# CloudCast — Cloud Broadcast Optimization (NSDI'24)
+# Usage: skydiscover-run initial_program.py evaluator.py -c config.yaml -s adaevolve
+language: python
+diff_based_generation: true
+max_iterations: 100
+checkpoint_interval: 1
+max_solution_length: 60000
+
+llm:                                                                                                                                                         
+    models:                                                                                                                                                    
+      - name: "gpt-5"          # your Azure deployment name                                                                                                    
+        api_base: "https://lesley-prospector.openai.azure.com/openai/v1"                                                                   
+        api_key: "${AZURE_API_KEY}"                                                                                                                            
+        weight: 1.0                                                                                                                                            
+    temperature: 0.99                                                                                                                                          
+    top_p: 0.99                                                                                                                                                
+    max_tokens: 32000                                                                                                                                        
+    timeout: 600
+
+prompt:
+  system_message: |-
+    You are an expert in cloud infrastructure optimization. Your task is to evolve the
+    search_algorithm(src, dsts, G, num_partitions) function to minimize overall
+    data transfer cost across multiple clouds.
+    You can be as creative as you want as long as you optimize the given metric, be diverse and bold.
+    Focus on efficiently broadcasting input data to multiple destination nodes by leveraging
+    parallel paths and overlapping transfers across networks. Use the BroadCastTopology
+    class and make_nx_graph function to identify low-cost routes.
+    Prioritize strategies that reduce redundant transfers, balance load across networks,
+    and exploit multi-network topologies to minimize cost.
+
+search:
+  type: "adaevolve"
+  num_context_programs: 2
+  database:
+    population_size: 20
+    num_islands: 3
+    decay: 0.9
+    intensity_min: 0.3
+    intensity_max: 0.7
+    use_adaptive_search: true
+    use_ucb_selection: true
+    use_migration: true
+    use_unified_archive: true
+    migration_interval: 15
+    migration_count: 5
+    fitness_weight: 0.7
+    novelty_weight: 0.3
+    diversity_strategy: "code"
+    use_dynamic_islands: true
+    max_islands: 5
+    spawn_productivity_threshold: 0.015
+    spawn_cooldown_iterations: 30
+    use_paradigm_breakthrough: true
+    paradigm_window_size: 10
+    paradigm_improvement_threshold: 0.08
+    paradigm_max_uses: 2
+    paradigm_max_tried: 10
+    paradigm_num_to_generate: 5
+    enable_error_retry: true
+    max_error_retries: 2
+
+evaluator:
+  timeout: 600
+

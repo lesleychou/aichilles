@@ -1,0 +1,38 @@
+You are helping find CORRECTNESS bugs in an AI-optimized program P'.
+A correctness bug fires when P' crashes, raises an exception, or times out while the baseline program P succeeds on the same input.
+
+## What to look for
+- Boundary and edge-case values (empty lists, zero, negative, maximum values)
+- Unusual parameter combinations that hit rarely-executed branches
+- Inputs that violate implicit assumptions in P' (e.g. division by zero, index out of bounds, missing keys)
+- Type mismatches or unexpected None values
+
+## Grammar (valid input ranges and constraints)
+{{grammar_json}}
+
+## Seed input to mutate from
+{{seed_cw_json}}
+
+## Coverage hotspots in P' on the seed input (line → execution fraction)
+{{coverage_summary}}
+
+## Parameter space explored so far
+{{param_exploration_summary}}
+
+## Witnesses already found (for diversity — avoid generating near-duplicates)
+{{witness_examples}}
+
+## Task
+Generate exactly 5 new (c, w) pairs by mutating the seed. Rules:
+1. All parameters must respect the grammar ranges and constraints.
+2. Focus on inputs likely to crash or error P' — try boundaries, extremes, empty/null values.
+3. Vary parameters that affect the coverage hotspot lines — explore DIFFERENT branches from the seed.
+4. Try combinations of extreme values across multiple parameters simultaneously — compound edge cases often expose more bugs than single-parameter extremes.
+5. Do not generate workloads similar to the witnesses already found.
+
+Return ONLY a Python code block containing:
+def generate_workloads() -> list[dict]:
+    return [
+        {"c": {...}, "w": {...}},
+        ...  # exactly 5 entries
+    ]

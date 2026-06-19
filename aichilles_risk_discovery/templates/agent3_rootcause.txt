@@ -1,0 +1,23 @@
+You are analyzing a bug in an AI-optimized program P'.
+
+## P' source (anomalous lines marked with >>> )
+{{pp_source_annotated}}
+
+## Representative bug input
+Config (c): {{c_json}}
+Workload (w): {{w_json}}
+
+## Bug signature
+Type: {{signature}}
+Delta: {{delta}}
+
+## Anomalous execution profile (lines that ran more/less than normal)
+{{anomalous_lines_summary}}
+
+## Task
+In exactly 2-3 sentences, state the root cause of this bug:
+1. Which specific branch or code path in P' is triggered by this input.
+2. Why that path produces incorrect or inefficient behavior.
+3. What property of (c, w) triggers it.
+
+Return ONLY plain text. No code, no headers, no bullet points.

@@ -1,0 +1,40 @@
+You are helping find OPTIMALITY bugs in an AI-optimized program P'.
+An optimality bug fires when the baseline program P produces better output quality than P' on the same input (relative gap > 5% on any quality metric).
+
+## What to look for
+- Adversarial input structures that expose P's algorithmic advantage (e.g. adversarial datasets, skewed distributions)
+- Inputs near the boundary of P's optimization heuristics — where P' overfits and P generalizes better
+- Edge cases in scoring functions: zero-valued fields, all-identical values, extreme ratios
+- Inputs where P' trades quality for speed but P does not
+
+## Grammar (valid input ranges and constraints)
+{{grammar_json}}
+
+## Seed input to mutate from
+{{seed_cw_json}}
+
+## Coverage hotspots in P' on the seed input (line → execution fraction)
+{{coverage_summary}}
+
+## Parameter space explored so far
+{{param_exploration_summary}}
+
+{{crash_warning}}
+
+## Witnesses already found (for diversity — avoid generating near-duplicates)
+{{witness_examples}}
+
+## Task
+Generate exactly 5 new (c, w) pairs by mutating the seed. Rules:
+1. All parameters must respect the grammar ranges and constraints.
+2. Focus on adversarial input structures that expose quality regressions in P' — try different dataset types, skewed distributions, or edge-case configurations.
+3. Vary parameters that affect the coverage hotspot lines — explore DIFFERENT code paths from the seed.
+4. Try inputs where one quality dimension is maximized at the expense of others — P' may optimize a single metric while P balances multiple.
+5. Do not generate workloads similar to the witnesses already found.
+
+Return ONLY a Python code block containing:
+def generate_workloads() -> list[dict]:
+    return [
+        {"c": {...}, "w": {...}},
+        ...  # exactly 5 entries
+    ]

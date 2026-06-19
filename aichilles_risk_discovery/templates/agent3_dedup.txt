@@ -1,0 +1,18 @@
+You are consolidating bug clusters by root cause.
+
+Below are {{n}} clusters. Each has a cluster ID, bug signature, and root cause hypothesis.
+
+{{clusters_summary}}
+
+Group these clusters by shared root cause. Two clusters share a root cause if they:
+- Implicate the same function(s) and code path
+- Describe the same algorithmic mistake
+- Differ only in workload parameters (size, skew, layer count, etc.)
+
+Return a JSON array of groups. Each group is a list of cluster IDs.
+Every cluster ID must appear in exactly one group.
+Order groups from most witnesses to fewest.
+
+Example output for 6 clusters: [[0, 2, 4], [1, 3], [5]]
+
+Return ONLY the JSON array. No explanation, no markdown, no other text.

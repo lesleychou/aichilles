@@ -1,0 +1,74 @@
+You are analyzing an ADRS (Algorithm Development and Research Suite) application to infer the full input space for adversarial bug discovery.
+
+## run_workload.py — fixed per-app harness (READ THIS FIRST)
+This file is fixed and cannot be changed. It defines the workload dict schema.
+The parameter names in grammar_workload MUST exactly match the keys this file
+reads from the workload dict (the workload.get("key", ...) calls).
+
+{{run_workload_source}}
+
+## Deterministically extracted parameters (ground truth — include ALL of these unchanged)
+{{extracted_params_json}}
+
+## External data file metadata
+{{data_file_metadata_json}}
+
+## evaluator.py source
+{{evaluator_source}}
+
+## initial_program.py source
+{{initial_program_source}}
+
+## Knowledge from prior runs (may be empty)
+{{knowledge_context}}
+
+## Your task
+
+Produce a JSON object with:
+1. "grammar_config": structural parameters that define the deployment environment (e.g. number of GPUs, number of replicas, number of nodes). These may be hardcoded constants in the original program, but for risk discovery we want to EXPLORE different configurations. Give each a valid range of values to try — do NOT mark them as "fixed". The range should cover realistic variations (e.g. num_gpus in [8, 16, 32, 64], num_nodes in [1, 2, 4, 8]).
+2. "grammar_workload": per-invocation algorithm inputs (e.g. request distributions, transaction sequences, query data, load tensors). Give each a valid range.
+3. "constraints": list of cross-parameter constraints as plain English strings (e.g. "num_replicas must be a multiple of num_gpus", "num_groups must be divisible by num_nodes"). These are CRITICAL — violating them will cause crashes.
+4. "notes": any other information needed to generate valid inputs.
+
+For each parameter:
+- If it is a module-level constant used DIRECTLY inside the evaluator (e.g. `num_physical_experts = NUM_REPLICAS`, `gpu_load = total_physical_load.view(..., NUM_GPUS, ...)`) then the evaluator is hard-wired to that value — mark it fixed.
+- If it is only used as a parameter passed INTO the algorithm (not consumed by the evaluator itself), assign a realistic range of values to explore. The goal is to find bugs across the full plausible input space.
+
+For each parameter include: name, type (int/float/str/list/tensor), range (human-readable). Only use "values" list for true categoricals (e.g. topology type).
+CRITICAL: parameter "name" fields in grammar_workload must exactly match the keys that run_workload.py reads (the workload.get("key") calls shown above). Wrong names silently fall through to defaults and kill exploration diversity.
+
+Then write two Python functions:
+
+- generate_workload(grammar: dict) -> dict: samples one valid (c, w) pair. Returns {"c": {...}, "w": {...}}.
+  For config params that have ranges (not fixed), sample randomly within those ranges while satisfying constraints.
+  For config params that are fixed (evaluator hard-wires them), use their fixed value.
+  Put all params that the algorithm receives as arguments into "c" or "w" — do not leave them out.
+  Example for a case where num_groups is free but num_replicas is fixed:
+    num_groups = random.choice([g for g in [1, 2, 4, 8, 16] if g % num_nodes == 0])
+    num_logical_experts = random.choice([e for e in [16,32,64,128,256] if e % num_groups == 0])
+    return {"c": {"num_replicas": FIXED_VALUE, "num_groups": num_groups, ...},
+            "w": {"num_layers": ..., "num_logical_experts": num_logical_experts, ...}}
+
+- run_workload(program_module, workload: dict): calls the program and returns a dict of scalar quality metrics.
+  CRITICAL: do NOT return raw tensors or tuples — the optimality oracle compares scalar numeric fields across P and P'.
+  Always call the algorithm first, then pass its output through the evaluator's quality-scoring function (e.g. simulate_inference, score_output, compute_metrics — whatever evaluator.py provides).
+  Import evaluator at the top of the function body (it is on sys.path). Example pattern:
+    phy2log, log2phy, logcnt = program_module.rebalance_experts(weight, ...)
+    import evaluator as _ev
+    score_gpu, score_expert = _ev.simulate_inference(log2phy, logcnt, weight)
+    return {"balancedness_score_gpu": float(score_gpu), "balancedness_score_expert": float(score_expert)}
+  If the evaluator has no quality-scoring function separate from the algorithm, return whatever scalar outputs the algorithm itself produces as a flat dict.
+
+Return ONLY a JSON block followed by a Python code block. No other text.
+
+JSON block format:
+```json
+{
+  "grammar_config": [{"name": "...", "type": "...", "range": "..."}],
+  "grammar_workload": [{"name": "...", "type": "...", "range": "..."}],
+  "constraints": ["..."],
+  "notes": "..."
+}
+```
+
+Python block must define exactly: generate_workload(grammar) and run_workload(program_module, workload).

@@ -1,0 +1,40 @@
+You are helping find SCALABILITY (TIME) bugs in an AI-optimized program P'.
+A scalab_time bug fires when P' runs significantly slower than the baseline program P on the same input (ratio > 1.5x). A P' timeout is always a confirmed scalab_time bug.
+
+## What to look for
+- Large input sizes that expose algorithmic complexity differences (O(N²) vs O(N log N))
+- Worst-case structural inputs: maximum fan-out, long chains, adversarial orderings
+- Inputs that trigger expensive fallback paths in P' that P avoids
+- High values for size/count parameters (push toward grammar maximums)
+
+## Grammar (valid input ranges and constraints)
+{{grammar_json}}
+
+## Seed input to mutate from
+{{seed_cw_json}}
+
+## Coverage hotspots in P' on the seed input (line → execution fraction)
+{{coverage_summary}}
+
+## Parameter space explored so far
+{{param_exploration_summary}}
+
+{{crash_warning}}
+
+## Witnesses already found (for diversity — avoid generating near-duplicates)
+{{witness_examples}}
+
+## Task
+Generate exactly 5 new (c, w) pairs by mutating the seed. Rules:
+1. All parameters must respect the grammar ranges and constraints.
+2. Focus on large, complex inputs that stress P's runtime — push size parameters toward their maximums.
+3. Try structurally adversarial configurations (e.g. skewed distributions, maximum nesting depth).
+4. Vary parameters that affect the coverage hotspot lines — explore DIFFERENT code paths from the seed.
+5. Do not generate workloads similar to the witnesses already found.
+
+Return ONLY a Python code block containing:
+def generate_workloads() -> list[dict]:
+    return [
+        {"c": {...}, "w": {...}},
+        ...  # exactly 5 entries
+    ]
