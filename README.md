@@ -79,7 +79,7 @@ Results land in `aichilles_risk_discovery/results/eplb/eplb_<timestamp>/` — op
 
 ## ▶️ Running on each app
 
-The pipeline ships with **5 system applictaions** (from the SkyDiscover
+The pipeline ships with **5 system applications** (from the SkyDiscover
 [ADRS benchmark](https://github.com/skydiscover-ai/skydiscover/tree/main/benchmarks/ADRS)).
 The `--best_program` path follows the pattern
 `benchmarks/ADRS/<app>/best/<model>/<method>/best_program.py`, where `<model>` ∈ `{claude, gpt}`
