@@ -56,8 +56,12 @@ Each oracle call compares `P'` against the reference `P` on the same workload an
 **Prerequisites:** Python ≥ 3.10 and an Anthropic API key.
 
 ```bash
-# Install all dependencies (pipeline + the 5 ADRS apps)
-pip install -e .          # or:  uv sync
+# Create & activate a virtual environment, then install all dependencies
+# (pipeline + the 5 ADRS apps)
+python -m venv .venv
+source .venv/bin/activate
+pip install .             # installs all deps; or, with uv:  uv sync
+
 export ANTHROPIC_API_KEY=sk-...
 ```
 

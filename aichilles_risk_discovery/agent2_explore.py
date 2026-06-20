@@ -9,8 +9,8 @@ run_agent_type(sig, app_dir, best_program_path, results_dir, client,
   crash_workloads_list contains workloads where P' errored or timed out during this run.
 
   Reads grammar.json and generate_workload.py from results_dir (Agent 1 outputs).
-  Writes matrix_V_{sig}.json (checkpointed each round) to results_dir.
-  Appends to witnesses_{type}.json for every oracle type that fires.
+  Writes matrix_V_{sig}.json (checkpointed each round) to results_dir. Confirmed
+  witnesses are the BUG-labeled subset of that matrix, so no separate file is written.
 """
 import json
 import sys
@@ -163,27 +163,6 @@ def _llm_mutate_for_sig(
 def _checkpoint_matrix(matrix_v: MatrixV, results_dir: Path, sig: Signature) -> None:
     path = results_dir / f"matrix_V_{sig.value}.json"
     path.write_text(json.dumps(matrix_v.all_entries(), indent=2, default=str))
-
-
-def _checkpoint_witnesses(
-    all_witnesses: dict[str, list],
-    results_dir: Path,
-) -> None:
-    """Write all 4 witness files (merge new findings into existing file contents)."""
-    for sig_value, witnesses in all_witnesses.items():
-        path = results_dir / f"witnesses_{sig_value}.json"
-        existing = []
-        if path.exists():
-            try:
-                existing = json.loads(path.read_text())
-            except Exception:
-                existing = []
-        if not witnesses and existing:
-            continue  # nothing new to add
-        seen = {json.dumps(e, sort_keys=True, default=str) for e in existing}
-        merged = existing + [e for e in witnesses
-                             if json.dumps(e, sort_keys=True, default=str) not in seen]
-        path.write_text(json.dumps(merged, indent=2, default=str))
 
 
 def run_agent_type(
@@ -426,14 +405,12 @@ def run_agent_type(
                 new_crash_workloads.append(w)
 
         _checkpoint_matrix(matrix_v, results_dir, sig)
-        _checkpoint_witnesses(run_witnesses, results_dir)
         consecutive_empty = 0 if new_bugs_this_round > 0 else consecutive_empty + 1
         round_idx += 1
 
-    # Final checkpoint — ensures files are written even if the while loop never ran
+    # Final checkpoint — ensures the matrix is written even if the while loop never ran
     # (e.g. budget exhausted entirely during warm-start).
     _checkpoint_matrix(matrix_v, results_dir, sig)
-    _checkpoint_witnesses(run_witnesses, results_dir)
 
     print(f"[agent2/{sig.value}] done. total_weaknesses={matrix_v.bug_count()}, "
           f"oracle_calls={oracle_calls}")
