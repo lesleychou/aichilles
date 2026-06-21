@@ -184,13 +184,7 @@ After a run, `plot_bugs.py` re-runs `P` and `P'` on the discovered witnesses and
 values, so you can spot the most informative axis.
 
 ```bash
-# Fast: plot from stored data only, no re-runs
-python aichilles_risk_discovery/plot_bugs.py \
-  aichilles_risk_discovery/results/eplb/eplb_20260518_132822 \
-  --no_reproduce --max_witnesses 0 \
-  --out eplb_weaknesses.png
-
-# Full: re-execute P and P' on up to 30 witnesses per cluster
+# re-execute P and P' on up to 30 witnesses per cluster
 python aichilles_risk_discovery/plot_bugs.py \
   aichilles_risk_discovery/results/eplb/eplb_20260518_132822 \
   --max_witnesses 30 --out eplb_weaknesses.png

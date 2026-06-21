@@ -395,6 +395,40 @@ def plot_all(all_cluster_data: list[dict], out_path: Path,
     plt.close(fig)
 
 
+# ── Stored-metric plotting (no re-run) ────────────────────────────────────────
+
+def _result_from_metrics(metrics: dict, suffix: str) -> dict:
+    """Reshape stored Agent-2 metrics (time_p/time_pp/mem_p/...) into a
+    run_one-style result dict so extract_y_value() can read it without re-running.
+    suffix is 'p' (baseline P) or 'pp' (evolved P')."""
+    return {
+        "time":      metrics.get(f"time_{suffix}"),
+        "mem_bytes": metrics.get(f"mem_{suffix}"),
+        "output":    metrics.get(f"output_{suffix}") or {},
+    }
+
+
+def _stored_rerun_data(witnesses: list[dict]) -> list[tuple[dict, dict, dict]]:
+    """Build (witness, rp, rpp) tuples from each witness's stored metrics, so the
+    grid can be plotted with --max_witnesses 0 (no P/P' re-execution)."""
+    out = []
+    for w in witnesses:
+        m = w.get("metrics")
+        if not m:
+            continue
+        out.append((w, _result_from_metrics(m, "p"), _result_from_metrics(m, "pp")))
+    return out
+
+
+def _stored_pair(representative: dict) -> tuple[dict | None, dict | None]:
+    """Representative (rp, rpp) from stored metrics — lets the optimality y-field
+    chooser work in no-re-run mode."""
+    m = representative.get("metrics")
+    if not m:
+        return None, None
+    return _result_from_metrics(m, "p"), _result_from_metrics(m, "pp")
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -407,7 +441,8 @@ def main() -> None:
                         choices=["scalab_time", "scalab_mem", "optimality", "correctness"],
                         help="Filter to one weakness type")
     parser.add_argument("--max_witnesses", type=int, default=50,
-                        help="Max witnesses re-run per cluster (default: 50)")
+                        help="Max witnesses re-run per cluster "
+                             "(0 = no re-run, plot stored metrics; default: 50)")
     parser.add_argument("--out", type=Path, default=None,
                         help="Output PNG path (default: bug_plot.png in first results_dir)")
     parser.add_argument("--no_reproduce", action="store_true",
@@ -483,6 +518,12 @@ def main() -> None:
                                                  cluster["representative"]["w"], app_dir)
                     if rep_rp.get("error") or rep_rpp.get("error"):
                         rep_rp, rep_rpp = None, None
+            else:
+                # --max_witnesses 0 (or no app dir): plot the metrics already
+                # stored on each witness during the Agent 2 oracle pass — no re-run.
+                rerun_data = _stored_rerun_data(witnesses)
+                if rep_rp is None:
+                    rep_rp, rep_rpp = _stored_pair(cluster.get("representative", {}))
 
             all_cluster_data.append({
                 "cluster":    cluster,
