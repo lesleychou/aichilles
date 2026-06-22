@@ -6,10 +6,13 @@
 <p align="center">Automatically Uncovering Hidden Weaknesses in AI-Evolved Systems.</p>
 
 <p align="center">
-  <a href="https://arxiv.org/abs/2606.15834"><img src="https://img.shields.io/badge/paper-arXiv-b31b1b?style=flat-square" alt="arXiv" /></a>
-  <a href="#-the-four-weakness-types"><img src="https://img.shields.io/badge/weakness%20types-4-red?style=flat-square" alt="Weakness Types" /></a>
-  <a href="#-running-on-each-app"><img src="https://img.shields.io/badge/apps-5-blue?style=flat-square" alt="Apps" /></a>
+  <a href="https://lesleychou.github.io/aichilles/"><img src="https://img.shields.io/badge/%F0%9F%94%8E_live_demo-project_page-2563eb?style=for-the-badge" alt="Project page" height="34" /></a>
+  <a href="https://arxiv.org/abs/2606.15834"><img src="https://img.shields.io/badge/paper-arXiv-b31b1b?style=for-the-badge" alt="arXiv" height="34" /></a>
+  <a href="#-the-four-weakness-types"><img src="https://img.shields.io/badge/weakness%20types-4-red?style=for-the-badge" alt="Weakness Types" height="34" /></a>
+  <a href="#-running-on-each-app"><img src="https://img.shields.io/badge/apps-5-blue?style=for-the-badge" alt="Apps" height="34" /></a>
 </p>
+
+<p align="center"><b><a href="https://lesleychou.github.io/aichilles/">🔎 Explore the results on the project page →</a></b></p>
 
 <p align="center">
   <img src="assets/overview.png" width="560" alt="AIChilles Risk Discovery pipeline overview">
