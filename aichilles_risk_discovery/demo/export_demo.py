@@ -31,6 +31,9 @@ _ALGO_NAMES = {"adaevolve": "AdaEvolve", "engram": "Engram", "openevolve": "Open
 # Priority order for picking a cluster's "primary" plottable type.
 _PLOTTABLE = ["scalab_time", "scalab_mem", "optimality"]
 
+# Display labels (data keys stay as-is so colors/curves/coverage still match).
+_TYPE_LABEL = {"scalab_time": "scalability_time", "scalab_mem": "scalability_memory"}
+
 
 def _result(metrics: dict, suffix: str) -> dict:
     """Stored Agent-2 metrics → {time, mem_mb, output}."""
@@ -189,7 +192,7 @@ def _cell_from_run(run_dir: Path, initial_by_app: dict) -> dict | None:
             evidence = "crash"  # fall back if no plottable x
         weaknesses.append({
             "id": f"{app}-{i}",
-            "name": f"{(primary or 'correctness')} · {c['trigger_func']}",
+            "name": f"{_TYPE_LABEL.get(primary or 'correctness', primary or 'correctness')} · {c['trigger_func']}",
             "triggerFunc": c["trigger_func"],
             "types": types,
             "size": c["size"],

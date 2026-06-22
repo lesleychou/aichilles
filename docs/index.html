@@ -7,7 +7,7 @@
   <meta name="description" content="Automatically uncovering hidden weaknesses in AI-evolved systems." />
   <style>
     :root{
-      --ink:#1b2436; --muted:#5b6b86; --faint:#8a97ad;
+      --ink:#1b2436; --muted:#54657f; --faint:#7c8aa1;
       --line:#e7ecf4; --line-soft:#eef2f8;
       --bg:#f4f7fb; --bg2:#eef2f8; --panel:#ffffff;
       --blue:#2563eb; --blue-ink:#1d4ed8; --purple:#7c3aed;
@@ -24,21 +24,27 @@
       font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
       background:linear-gradient(180deg,var(--bg) 0%, var(--bg2) 100%);
       background-attachment:fixed;
-      line-height:1.6;
+      font-size:18px; line-height:1.65;
     }
     a{color:var(--blue-ink);}
-    main{max-width:1020px; margin:0 auto; padding:0 24px 72px;}
+    main{max-width:1020px; margin:0 auto; padding:0 24px 76px;}
 
-    /* hero */
-    .hero{text-align:center; padding:56px 0 14px;}
-    .hero .logo{height:128px; width:auto; filter:drop-shadow(0 6px 16px rgba(27,36,54,.10));}
-    .hero h1{font-size:clamp(36px,5.4vw,56px); letter-spacing:-.045em; margin:18px 0 6px; font-weight:850;}
-    .hero .tagline{font-size:clamp(17px,2.4vw,21px); color:var(--muted); max-width:680px; margin:0 auto 22px;}
-    .badges{display:flex; flex-wrap:wrap; gap:10px; justify-content:center;}
+    /* hero — logo to the left of title + tagline */
+    .hero{display:flex; align-items:center; gap:34px; padding:58px 0 16px;}
+    .hero .logo{height:158px; width:auto; flex:none; filter:drop-shadow(0 6px 16px rgba(27,36,54,.10));}
+    .hero-text{min-width:0;}
+    .hero h1{font-size:clamp(40px,5.6vw,60px); letter-spacing:-.045em; margin:0 0 8px; font-weight:850; line-height:1.02;}
+    .hero .tagline{font-size:clamp(19px,2.6vw,24px); color:var(--muted); margin:0 0 22px;}
+    .badges{display:flex; flex-wrap:wrap; gap:11px;}
+    @media(max-width:700px){
+      .hero{flex-direction:column; text-align:center; gap:18px; padding-top:44px;}
+      .hero .logo{height:140px;}
+      .badges{justify-content:center;}
+    }
     .badge{
       display:inline-flex; align-items:center; gap:8px; text-decoration:none; cursor:pointer;
-      border:1px solid var(--line); border-radius:999px; padding:10px 17px;
-      font-size:14px; font-weight:750; color:var(--ink); background:var(--panel); box-shadow:var(--shadow-sm);
+      border:1px solid var(--line); border-radius:999px; padding:11px 19px;
+      font-size:16px; font-weight:750; color:var(--ink); background:var(--panel); box-shadow:var(--shadow-sm);
       transition:transform .15s ease, box-shadow .15s ease;
     }
     .badge:hover{transform:translateY(-2px); box-shadow:var(--shadow);}
@@ -46,31 +52,41 @@
     .badge.dark{background:#0f172a; color:#fff; border-color:#0f172a;}
 
     /* sections */
-    section.block{margin-top:54px;}
+    section.block{margin-top:58px;}
     .eyebrow{
-      display:inline-block; font-size:12.5px; font-weight:850; letter-spacing:.12em;
+      display:inline-block; font-size:14px; font-weight:850; letter-spacing:.12em;
       text-transform:uppercase; color:var(--blue); background:var(--blue-soft);
-      padding:5px 11px; border-radius:999px; margin-bottom:14px;
+      padding:6px 13px; border-radius:999px; margin-bottom:16px;
     }
-    h2.sec{font-size:clamp(24px,3.4vw,32px); letter-spacing:-.03em; margin:0 0 10px; font-weight:820;}
-    .lead{color:var(--muted); font-size:17px; max-width:780px; margin:0 0 22px;}
+    h2.sec{font-size:clamp(28px,3.8vw,38px); letter-spacing:-.03em; margin:0 0 12px; font-weight:820; line-height:1.12;}
+    .lead{color:var(--muted); font-size:20px; max-width:800px; margin:0 0 24px;}
+
+    /* two-column: text left, figure right */
+    .split{display:grid; grid-template-columns:1fr 1fr; gap:40px; align-items:center;}
+    @media(max-width:780px){.split{grid-template-columns:1fr; gap:22px;}}
+    .split-text .lead{margin-bottom:0; max-width:none;}
+    .split-fig{text-align:center; min-width:0;}
+    /* hover to enlarge the main figures */
+    .split-fig figure.fig{position:relative; cursor:zoom-in; transform-origin:center; will-change:transform;
+      transition:transform .28s ease, box-shadow .28s ease;}
+    .split-fig figure.fig:hover{transform:scale(1.45); z-index:30; box-shadow:0 26px 60px rgba(27,36,54,.22);}
 
     /* framed figure — white card so white-bg images blend via a soft frame */
+    .figrow{text-align:center;}
     figure.fig{
-      margin:0; background:var(--panel); border:1px solid var(--line);
+      display:inline-block; margin:0; max-width:100%;
+      background:var(--panel); border:1px solid var(--line);
       border-radius:var(--radius); box-shadow:var(--shadow); padding:16px; text-align:center;
     }
-    figure.fig.tight{display:inline-block;}
     figure.fig img{max-width:100%; height:auto; display:block; margin:0 auto; border-radius:8px;}
-    figure.fig figcaption{color:var(--faint); font-size:13px; margin-top:12px; line-height:1.5;}
-    .center{text-align:center;}
+    figure.fig figcaption{color:var(--faint); font-size:15px; margin-top:13px; line-height:1.5; max-width:560px;}
 
     /* weakness type cards */
-    .types{display:grid; grid-template-columns:repeat(2,1fr); gap:14px; margin-top:6px;}
+    .types{display:grid; grid-template-columns:repeat(2,1fr); gap:16px; margin-top:6px;}
     @media(max-width:680px){.types{grid-template-columns:1fr;}}
-    .type{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px 18px; box-shadow:var(--shadow-sm);}
-    .type .pill{display:inline-block; font-weight:800; font-size:12.5px; padding:4px 11px; border-radius:999px; margin-bottom:8px;}
-    .type p{margin:0; color:var(--muted); font-size:14.5px;}
+    .type{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px 20px; box-shadow:var(--shadow-sm);}
+    .type .pill{display:inline-block; font-weight:800; font-size:15px; padding:5px 13px; border-radius:999px; margin-bottom:10px;}
+    .type p{margin:0; color:var(--muted); font-size:17px;}
     .pill.red{background:var(--red-soft); color:var(--red);}
     .pill.green{background:var(--green-soft); color:var(--green);}
     .pill.orange{background:var(--orange-soft); color:var(--orange);}
@@ -78,27 +94,28 @@
     code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.9em; background:var(--line-soft); padding:1px 6px; border-radius:6px;}
 
     /* highlights */
-    .hl{display:grid; grid-template-columns:repeat(2,1fr); gap:14px; margin-top:6px;}
+    .hl{display:grid; grid-template-columns:repeat(2,1fr); gap:16px; margin-top:6px;}
     @media(max-width:680px){.hl{grid-template-columns:1fr;}}
-    .hl .item{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px 18px; box-shadow:var(--shadow-sm);}
-    .hl .item b{display:block; margin-bottom:4px; font-size:15px;}
-    .hl .item span{color:var(--muted); font-size:14px;}
+    .hl .item{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px 20px; box-shadow:var(--shadow-sm);}
+    .hl .item b{display:block; margin-bottom:5px; font-size:17.5px;}
+    .hl .item span{color:var(--muted); font-size:16px;}
 
     /* results CTA banner */
     .cta{
-      margin-top:22px; display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap;
+      margin-top:24px; display:flex; align-items:center; justify-content:space-between; gap:22px; flex-wrap:wrap;
       background:linear-gradient(120deg, rgba(37,99,235,.08), rgba(124,58,237,.08));
-      border:1px solid var(--line); border-radius:var(--radius); padding:20px 24px;
+      border:1px solid var(--line); border-radius:var(--radius); padding:22px 26px;
     }
-    .cta div p{margin:4px 0 0; color:var(--muted); font-size:15px;}
+    .cta div b{font-size:19px;}
+    .cta div p{margin:5px 0 0; color:var(--muted); font-size:17px;}
     .cta .go{
-      text-decoration:none; background:var(--blue); color:#fff; font-weight:800; font-size:15px;
-      padding:13px 24px; border-radius:12px; white-space:nowrap; box-shadow:0 10px 22px rgba(37,99,235,.28);
+      text-decoration:none; background:var(--blue); color:#fff; font-weight:800; font-size:17px;
+      padding:14px 26px; border-radius:12px; white-space:nowrap; box-shadow:0 10px 22px rgba(37,99,235,.28);
       transition:transform .15s ease;
     }
     .cta .go:hover{transform:translateY(-2px);}
 
-    footer{margin-top:60px; padding-top:24px; border-top:1px solid var(--line); text-align:center; color:var(--faint); font-size:13.5px;}
+    footer{margin-top:64px; padding-top:26px; border-top:1px solid var(--line); text-align:center; color:var(--faint); font-size:15.5px; line-height:1.7;}
     footer a{color:var(--blue-ink); text-decoration:none;}
   </style>
 </head>
@@ -107,43 +124,52 @@
     <!-- HERO -->
     <section class="hero">
       <img class="logo" src="assets/aichilles_logo.png" alt="AIChilles logo" />
-      <h1>AIChilles Risk Discovery</h1>
-      <p class="tagline">Automatically uncovering hidden weaknesses in AI-evolved systems.</p>
-      <div class="badges">
-        <a class="badge primary" href="explorer/">🔎 Explore the results</a>
-        <a class="badge dark" href="https://github.com/lesleychou/aichilles">★ GitHub</a>
-        <a class="badge" href="https://arxiv.org/abs/2606.15834">📄 arXiv paper</a>
+      <div class="hero-text">
+        <h1>AIChilles Risk Discovery</h1>
+        <p class="tagline">Automatically uncovering hidden weaknesses in AI-evolved systems.</p>
+        <div class="badges">
+          <a class="badge primary" href="explorer/">🔎 Explore the results</a>
+          <a class="badge dark" href="https://github.com/lesleychou/aichilles">★ GitHub</a>
+          <a class="badge" href="https://arxiv.org/abs/2606.15834">📄 arXiv paper</a>
+        </div>
       </div>
     </section>
 
     <!-- PROBLEM -->
-    <section class="block">
-      <span class="eyebrow">The problem</span>
-      <h2 class="sec">AI-evolved programs can hide dangerous failures</h2>
-      <p class="lead">
-        Automated discovery systems evolve a program <code>P</code> into a faster <code>P′</code> that scores well
-        on a fixed workload <code>W</code>. But <code>P′</code> may hide failures that only surface on workloads no
-        one tested. <b>AIChilles</b> searches for an adversarial workload <code>W′</code> that makes <code>P′</code>
-        crash, blow up in time or memory, or quietly degrade solution quality.
-      </p>
-      <figure class="fig">
-        <img src="assets/aichilles_problem.png" alt="AIChilles problem overview: evolving P into P′, then finding an adversarial workload W′ that breaks P′" />
-      </figure>
+    <section class="block split">
+      <div class="split-text">
+        <span class="eyebrow">The problem</span>
+        <h2 class="sec">AI-evolved programs can hide dangerous failures</h2>
+        <p class="lead">
+          Automated discovery systems evolve a program <code>P</code> into a faster <code>P′</code> that scores well
+          on a fixed workload <code>W</code>. But <code>P′</code> may hide failures that only surface on workloads no
+          one tested. <b>AIChilles</b> searches for an adversarial workload <code>W′</code> that makes <code>P′</code>
+          crash, blow up in time or memory, or quietly degrade solution quality.
+        </p>
+      </div>
+      <div class="split-fig">
+        <figure class="fig">
+          <img src="assets/aichilles_problem.png" alt="AIChilles problem overview: evolving P into P′, then finding an adversarial workload W′ that breaks P′" />
+        </figure>
+      </div>
     </section>
 
     <!-- APPROACH -->
-    <section class="block">
-      <span class="eyebrow">How it works</span>
-      <h2 class="sec">A three-agent, coverage-guided pipeline</h2>
-      <p class="lead">
-        AIChilles explores the input space like a fuzzer, but uses <b>code coverage as a novelty signal</b> and an
-        <b>LLM as the mutator</b> — chasing genuinely new behaviors instead of random noise. Confirmed weaknesses
-        are clustered by root cause and explained.
-      </p>
-      <figure class="fig">
-        <img src="assets/overview.png" alt="Three-agent pipeline: workload-space inference, divergence-guided search, weakness dedup and analysis" />
-        <figcaption>Workload-space inference → divergence-guided search (4 weakness types) → weakness dedup &amp; root-cause analysis, with a warm-start knowledge base.</figcaption>
-      </figure>
+    <section class="block split">
+      <div class="split-text">
+        <span class="eyebrow">How it works</span>
+        <h2 class="sec">A three-agent, coverage-guided pipeline</h2>
+        <p class="lead">
+          AIChilles explores the input space like a fuzzer, but uses <b>code coverage as a novelty signal</b> and an
+          <b>LLM as the mutator</b> — chasing genuinely new behaviors instead of random noise. Confirmed weaknesses
+          are clustered by root cause and explained.
+        </p>
+      </div>
+      <div class="split-fig">
+        <figure class="fig">
+          <img src="assets/overview.png" alt="Three-agent pipeline: workload-space inference, divergence-guided search, weakness dedup and analysis" />
+        </figure>
+      </div>
     </section>
 
     <!-- WEAKNESS TYPES -->
@@ -152,24 +178,30 @@
       <h2 class="sec">Four weakness types, checked every oracle call</h2>
       <div class="types">
         <div class="type"><span class="pill red">correctness</span><p><code>P′</code> crashes, times out, or returns a wrong / invalid result.</p></div>
-        <div class="type"><span class="pill green">scalab_time</span><p><code>P′</code> is dramatically slower as the workload scales.</p></div>
-        <div class="type"><span class="pill orange">scalab_mem</span><p><code>P′</code> uses dramatically more memory as the workload scales.</p></div>
+        <div class="type"><span class="pill green">scalability_time</span><p><code>P′</code> is dramatically slower as the workload scales.</p></div>
+        <div class="type"><span class="pill orange">scalability_memory</span><p><code>P′</code> uses dramatically more memory as the workload scales.</p></div>
         <div class="type"><span class="pill purple">optimality</span><p><code>P′</code> runs fine but produces a measurably worse solution.</p></div>
       </div>
     </section>
 
     <!-- RESULTS -->
     <section class="block">
-      <span class="eyebrow">Results</span>
-      <h2 class="sec">Weaknesses found across 5 systems × 6 evolved programs</h2>
-      <p class="lead">
-        Each cell counts discovered weaknesses for one system and one evolved program
-        (3 frameworks — AdaEvolve, OpenEvolve, Engram — × 2 LLMs, Claude-Opus-4.6 &amp; GPT-5),
-        broken out by weakness type.
-      </p>
-      <figure class="fig tight center">
-        <img src="assets/heatmap.png" alt="Heatmap of weakness counts per system, evolved program, and weakness type" style="max-width:560px;" />
-      </figure>
+      <div class="split">
+        <div class="split-text">
+          <span class="eyebrow">Results</span>
+          <h2 class="sec">Weaknesses found across 5 systems × 6 evolved programs</h2>
+          <p class="lead">
+            Each cell counts discovered weaknesses for one system and one evolved program
+            (3 frameworks — AdaEvolve, OpenEvolve, Engram — × 2 LLMs, Claude-Opus-4.6 &amp; GPT-5),
+            broken out by weakness type.
+          </p>
+        </div>
+        <div class="split-fig">
+          <figure class="fig">
+            <img src="assets/heatmap.png" alt="Heatmap of weakness counts per system, evolved program, and weakness type" />
+          </figure>
+        </div>
+      </div>
       <div class="cta">
         <div>
           <b>Dig into every weakness.</b>

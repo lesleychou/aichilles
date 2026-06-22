@@ -217,9 +217,11 @@
       return set;
     }
 
+    const TYPE_LABEL = { scalab_time: 'scalability_time', scalab_mem: 'scalability_memory' };
+    function typeLabel(t) { return TYPE_LABEL[t] || t; }
     function typeBadge(t) {
       const color = t === 'correctness' ? 'red' : t === 'optimality' ? 'purple' : t === 'scalab_mem' ? 'orange' : 'green';
-      return `<span class="badge ${color}">${t}</span>`;
+      return `<span class="badge ${color}">${typeLabel(t)}</span>`;
     }
 
     function refresh() {
