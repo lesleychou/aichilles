@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AIChilles Risk Discovery</title>
+  <meta name="description" content="Automatically uncovering hidden weaknesses in AI-evolved systems." />
+  <style>
+    :root {
+      --bg:#f7f8fb; --ink:#172033; --muted:#64748b; --line:#dbe3ef; --soft:#f1f5f9;
+      --blue:#2563eb; --purple:#7c3aed; --green:#059669; --orange:#ea580c; --red:#dc2626;
+      --red-soft:#fee2e2; --green-soft:#d1fae5; --orange-soft:#ffedd5; --purple-soft:#ede9fe;
+      --shadow:0 16px 40px rgba(15,23,42,.08); --radius:18px;
+    }
+    *{box-sizing:border-box;}
+    body{
+      margin:0; color:var(--ink);
+      font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(37,99,235,.12), transparent 30%),
+        radial-gradient(circle at top right, rgba(124,58,237,.10), transparent 28%),
+        var(--bg);
+    }
+    main{max-width:980px; margin:0 auto; padding:48px 24px 64px;}
+    .hero{text-align:center;}
+    .hero img.logo{height:150px; width:auto;}
+    h1{font-size:clamp(34px,5vw,52px); letter-spacing:-.045em; margin:14px 0 8px;}
+    .tagline{font-size:19px; color:var(--muted); margin:0 auto 18px; max-width:680px; line-height:1.5;}
+    .badges{display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom:8px;}
+    .badge{
+      display:inline-flex; align-items:center; gap:7px; text-decoration:none;
+      border:1px solid var(--line); border-radius:999px; padding:8px 14px;
+      font-size:13px; font-weight:800; color:var(--ink); background:rgba(255,255,255,.8);
+      transition:160ms ease;
+    }
+    .badge:hover{transform:translateY(-1px); box-shadow:var(--shadow);}
+    .badge.primary{background:var(--blue); color:#fff; border-color:var(--blue);}
+    .badge.dark{background:#0f172a; color:#fff; border-color:#0f172a;}
+    .fig{margin:30px auto 8px; text-align:center;}
+    .fig img{max-width:100%; border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); background:#fff;}
+    .fig figcaption{color:var(--muted); font-size:13px; margin-top:10px;}
+    .card{
+      background:rgba(255,255,255,.9); border:1px solid var(--line); border-radius:var(--radius);
+      box-shadow:var(--shadow); padding:22px 24px; margin-top:26px; backdrop-filter:blur(12px);
+    }
+    .card h2{margin:0 0 12px; letter-spacing:-.02em; font-size:22px;}
+    .card p{color:var(--muted); line-height:1.6;}
+    .cta{
+      display:flex; align-items:center; justify-content:space-between; gap:18px; flex-wrap:wrap;
+      background:linear-gradient(120deg, rgba(37,99,235,.10), rgba(124,58,237,.10));
+      border:1px solid var(--line);
+    }
+    .cta .go{
+      text-decoration:none; background:var(--blue); color:#fff; font-weight:800; font-size:15px;
+      padding:13px 22px; border-radius:12px; white-space:nowrap; box-shadow:0 8px 18px rgba(37,99,235,.25);
+      transition:160ms ease;
+    }
+    .cta .go:hover{transform:translateY(-1px);}
+    table{width:100%; border-collapse:collapse; margin-top:6px; font-size:14px;}
+    th,td{text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:top;}
+    th{color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.05em;}
+    code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.92em;
+      background:var(--soft); padding:1px 6px; border-radius:6px;}
+    .pill{display:inline-block; font-weight:800; font-size:12px; padding:3px 9px; border-radius:999px;}
+    .pill.red{background:var(--red-soft); color:var(--red);}
+    .pill.green{background:var(--green-soft); color:var(--green);}
+    .pill.orange{background:var(--orange-soft); color:var(--orange);}
+    .pill.purple{background:var(--purple-soft); color:var(--purple);}
+    ul.hl{margin:0; padding-left:0; list-style:none;}
+    ul.hl li{padding:8px 0; border-bottom:1px solid var(--soft); color:var(--ink); line-height:1.55;}
+    ul.hl li:last-child{border-bottom:none;}
+    ul.hl b{font-weight:800;}
+    footer{text-align:center; color:var(--muted); font-size:13px; margin-top:34px; line-height:1.7;}
+    footer a{color:var(--blue); text-decoration:none;}
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <img class="logo" src="assets/aichilles_logo.png" alt="AIChilles logo" />
+      <h1>AIChilles Risk Discovery</h1>
+      <p class="tagline">Automatically uncovering hidden weaknesses in AI-evolved systems.</p>
+      <div class="badges">
+        <a class="badge primary" href="explorer/">🔎 Open the results explorer</a>
+        <a class="badge dark" href="https://github.com/lesleychou/aichilles">★ GitHub</a>
+        <a class="badge" href="https://arxiv.org/abs/2606.15834">📄 arXiv paper</a>
+      </div>
+    </section>
+
+    <figure class="fig">
+      <img src="assets/overview.png" alt="AIChilles Risk Discovery pipeline overview" />
+      <figcaption>A 3-agent pipeline: workload-space inference → divergence-guided search (4 weakness types) → weakness dedup &amp; root-cause analysis.</figcaption>
+    </figure>
+
+    <section class="card">
+      <p style="margin-top:0">
+        <b>AIChilles Risk Discovery</b> stress-tests a <em>candidate</em> program <code>P′</code>
+        (produced by an automated discovery / evolution system) against its <em>reference</em>
+        program <code>P</code>, and surfaces the workloads where <code>P′</code> quietly goes wrong —
+        crashes, worse targeted performance, or blow-ups in time and memory. It explores inputs like
+        a fuzzer, but uses <b>code coverage as a novelty signal</b> and an <b>LLM as the mutator</b>,
+        then clusters confirmed weaknesses and explains their root cause.
+      </p>
+    </section>
+
+    <section class="card cta">
+      <div>
+        <h2 style="margin-bottom:4px">Interactive results explorer</h2>
+        <p style="margin:0">Browse real discovered weaknesses across 5 systems × 3 evolution frameworks × 2 LLMs — with side-by-side P vs P′ source (weakness lines highlighted), trigger workloads, and P-vs-P′ regression curves.</p>
+      </div>
+      <a class="go" href="explorer/">Open explorer →</a>
+    </section>
+
+    <section class="card">
+      <h2>The four weakness types</h2>
+      <table>
+        <tr><th>Type</th><th>What it means</th></tr>
+        <tr><td><span class="pill red">correctness</span></td><td><code>P′</code> crashes, times out, or returns a wrong/invalid result.</td></tr>
+        <tr><td><span class="pill green">scalab_time</span></td><td><code>P′</code> is dramatically slower as the workload scales.</td></tr>
+        <tr><td><span class="pill orange">scalab_mem</span></td><td><code>P′</code> uses dramatically more memory as the workload scales.</td></tr>
+        <tr><td><span class="pill purple">optimality</span></td><td><code>P′</code> runs fine but produces a measurably worse solution.</td></tr>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Highlights</h2>
+      <ul class="hl">
+        <li>🔎 <b>Coverage-guided, LLM-mutated search.</b> A MAP-Elites loop uses <code>sys.settrace</code> coverage as the novelty signal and an LLM as the workload mutator — chasing <em>unseen</em> code paths, not random noise.</li>
+        <li>🐞 <b>Four weakness types in one pass.</b> Every oracle call checks correctness, time- and memory-scalability, and optimality simultaneously.</li>
+        <li>🧬 <b>Auto-inferred input grammar.</b> Reads the app's <code>evaluator.py</code> and writes a <code>generate_workload()</code> sampler — no hand-written fuzz harness.</li>
+        <li>🧠 <b>Cross-run knowledge base.</b> Confirmed weakness “seeds” persist per app and warm-start later runs, so discovery compounds.</li>
+      </ul>
+    </section>
+
+    <footer>
+      Target systems from the SkyDiscover
+      <a href="https://github.com/skydiscover-ai/skydiscover/tree/main/benchmarks/ADRS">ADRS benchmark</a>.
+      Evolved programs via AdaEvolve / OpenEvolve (<a href="https://github.com/skydiscover-ai/skydiscover">SkyDiscover</a>)
+      and <a href="https://github.com/mit-nms/Engram/tree/engram">Engram</a>.<br>
+      © 2026 AIChilles authors · <a href="https://github.com/lesleychou/aichilles">lesleychou/aichilles</a>
+    </footer>
+  </main>
+</body>
+</html>

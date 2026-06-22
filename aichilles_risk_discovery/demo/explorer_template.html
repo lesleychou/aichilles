@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AIChilles Weakness Explorer</title>
+  <style>
+    :root {
+      --bg: #f7f8fb;
+      --panel: #ffffff;
+      --ink: #172033;
+      --muted: #64748b;
+      --line: #dbe3ef;
+      --soft: #f1f5f9;
+      --blue: #2563eb;
+      --blue-soft: #dbeafe;
+      --purple: #7c3aed;
+      --purple-soft: #ede9fe;
+      --green: #059669;
+      --green-soft: #d1fae5;
+      --orange: #ea580c;
+      --orange-soft: #ffedd5;
+      --red: #dc2626;
+      --red-soft: #fee2e2;
+      --yellow-soft: #fef9c3;
+      --shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+      --radius: 18px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 30%),
+        radial-gradient(circle at top right, rgba(124, 58, 237, 0.10), transparent 28%),
+        var(--bg);
+    }
+    header, main { max-width: 1480px; margin: 0 auto; padding-left: 24px; padding-right: 24px; }
+    header { padding-top: 32px; padding-bottom: 14px; }
+    main { padding-bottom: 56px; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px;
+      border: 1px solid var(--line); border-radius: 999px; color: var(--blue);
+      background: rgba(255, 255, 255, 0.78); font-size: 13px; font-weight: 800; letter-spacing: 0.02em;
+    }
+    h1 { margin: 16px 0 10px; font-size: clamp(34px, 5vw, 56px); line-height: 1.02; letter-spacing: -0.045em; }
+    .subhead { max-width: 860px; font-size: 18px; line-height: 1.55; color: var(--muted); margin: 0; }
+    .card {
+      background: rgba(255, 255, 255, 0.88); border: 1px solid var(--line); border-radius: var(--radius);
+      box-shadow: var(--shadow); padding: 18px; backdrop-filter: blur(12px);
+    }
+    .card h2, .card h3, .card h4 { margin: 0; letter-spacing: -0.02em; }
+    .card p { color: var(--muted); line-height: 1.55; }
+    .filter-bar { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin: 18px 0; }
+    @media (max-width: 860px) { .filter-bar { grid-template-columns: 1fr; } }
+    .filter-group { padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255, 255, 255, 0.72); }
+    .filter-label { font-size: 12px; font-weight: 900; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tab {
+      border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 8px 11px;
+      color: var(--ink); font-weight: 800; font-size: 13px; cursor: pointer; transition: 160ms ease;
+    }
+    .tab:hover { transform: translateY(-1px); }
+    .tab.active { color: white; background: var(--blue); border-color: var(--blue); box-shadow: 0 8px 18px rgba(37, 99, 235, 0.20); }
+    .tab.disabled { opacity: 0.38; cursor: not-allowed; }
+    .top-grid { display: grid; grid-template-columns: 0.88fr 1.12fr; gap: 18px; align-items: start; }
+    @media (max-width: 980px) { .top-grid { grid-template-columns: 1fr; } }
+    .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px; }
+    @media (max-width: 740px) { .summary-grid { grid-template-columns: repeat(2, 1fr); } }
+    .metric { padding: 13px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+    .metric .value { font-size: 25px; font-weight: 900; letter-spacing: -0.03em; }
+    .metric .label { font-size: 12px; color: var(--muted); margin-top: 3px; }
+    .bug-list { display: grid; gap: 10px; margin-top: 12px; max-height: 540px; overflow: auto; padding-right: 4px; }
+    .bug-item { border: 1px solid var(--line); border-radius: 16px; padding: 13px; background: #fff; cursor: pointer; transition: 160ms ease; }
+    .bug-item:hover { transform: translateY(-1px); box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08); }
+    .bug-item.active { border-color: var(--blue); box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12); }
+    .bug-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+    .bug-name { font-weight: 900; }
+    .bug-cause { color: var(--muted); font-size: 13px; line-height: 1.45; }
+    .badge-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px;
+      padding: 4px 8px; font-size: 12px; font-weight: 800; background: #fff; color: #334155; white-space: nowrap;
+    }
+    .badge.red { background: var(--red-soft); color: var(--red); border-color: rgba(220, 38, 38, 0.22); }
+    .badge.orange { background: var(--orange-soft); color: var(--orange); border-color: rgba(234, 88, 12, 0.24); }
+    .badge.green { background: var(--green-soft); color: var(--green); border-color: rgba(5, 150, 105, 0.20); }
+    .badge.purple { background: var(--purple-soft); color: var(--purple); border-color: rgba(124, 58, 237, 0.20); }
+    .detail-head { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; border-bottom: 1px solid var(--line); padding-bottom: 14px; margin-bottom: 14px; }
+    @media (max-width: 640px) { .detail-head { flex-direction: column; } }
+    .detail-head h2 { margin-bottom: 7px; }
+    .detail-head p { margin: 0; }
+    .section { margin-top: 18px; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 980px) { .two-col { grid-template-columns: 1fr; } }
+    /* light code theme */
+    .code-card { border: 1px solid var(--line); border-radius: 14px; background: #ffffff; overflow: hidden; }
+    .code-title { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; background: #f8fafc; color: #334155; font-size: 13px; font-weight: 800; border-bottom: 1px solid var(--line); }
+    .code-title .hl { color: #dc2626; font-weight: 800; }
+    pre { margin: 0; padding: 8px 10px; overflow: auto; color: #1f2937; font-size: 12px; line-height: 1.3; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #ffffff; }
+    .line { display: block; min-width: max-content; padding-right: 6px; border-radius: 3px; }
+    .line .num { display: inline-block; width: 42px; color: #c2c8d4; user-select: none; text-align: right; padding-right: 12px; }
+    .line.buggy { background: #fff1f2; box-shadow: inset 3px 0 0 #f43f5e; }
+    .codecol pre { position: relative; max-height: 540px; min-height: 180px; }
+    /* python tokens */
+    .t-kw  { color: #7c3aed; font-weight: 700; }
+    .t-str { color: #059669; }
+    .t-com { color: #94a3b8; font-style: italic; }
+    .t-num { color: #b45309; }
+    .t-fn  { color: #2563eb; }
+    .t-def { color: #2563eb; font-weight: 700; }
+    .code-section { margin-top: 18px; }
+    .workload { border: 1px solid var(--line); border-radius: 16px; padding: 14px; background: #fff; }
+    .workload-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 12px; }
+    @media (max-width: 640px) { .workload-grid { grid-template-columns: 1fr; } }
+    .kv { padding: 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--soft); }
+    .kv .k { font-size: 12px; color: var(--muted); font-weight: 800; }
+    .kv .v { margin-top: 4px; font-size: 17px; font-weight: 900; }
+    .evidence { border: 1px solid var(--line); border-radius: 16px; padding: 14px; background: #fff; }
+    .rootcause { border: 1px solid var(--line); border-left: 4px solid var(--purple); border-radius: 12px; padding: 12px 14px; background: var(--purple-soft); color: #4c1d95; font-size: 13px; line-height: 1.55; margin-top: 12px; }
+    .chart-wrap { margin-top: 12px; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(180deg, #fff, #f8fafc); padding: 12px; overflow: hidden; }
+    svg { width: 100%; height: auto; display: block; }
+    .crash-box { margin-top: 12px; border-radius: 14px; border: 1px solid rgba(220, 38, 38, 0.32); background: #450a0a; color: #fee2e2; padding: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.55; overflow: auto; }
+    .legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; color: var(--muted); font-size: 12px; }
+    .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+    .swatch { width: 16px; height: 4px; border-radius: 999px; background: var(--blue); }
+    .swatch.red { background: var(--red); }
+    .swatch.green { background: var(--green); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .empty { border: 1px dashed var(--line); border-radius: 16px; padding: 24px; color: var(--muted); text-align: center; background: rgba(255,255,255,0.66); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="eyebrow">AIChilles Risk Discovery · Weakness Explorer</div>
+    <h1>Weaknesses discovered in AI-evolved systems.</h1>
+    <p class="subhead">
+      Real results from the weakness-discovery pipeline: filter by app, evolution framework, and LLM,
+      then inspect each root-cause cluster — the evolved code, the workload that triggers it, the
+      LLM's root-cause hypothesis, and a P-vs-P′ regression curve built from the discovered witnesses.
+    </p>
+  </header>
+
+  <main>
+    <section class="filter-bar">
+      <div class="filter-group"><div class="filter-label">App</div><div class="tabs" id="appTabs"></div></div>
+      <div class="filter-group"><div class="filter-label">AI-evolve framework</div><div class="tabs" id="algoTabs"></div></div>
+      <div class="filter-group"><div class="filter-label">LLM</div><div class="tabs" id="llmTabs"></div></div>
+    </section>
+
+    <section class="top-grid">
+      <div class="card">
+        <h2>Discovered weaknesses</h2>
+        <p id="resultNote">Real discovered witnesses grouped by root cause.</p>
+        <div class="summary-grid">
+          <div class="metric"><div class="value" id="mWitness">0</div><div class="label">Witnesses</div></div>
+          <div class="metric"><div class="value" id="mCrash">0</div><div class="label">Correctness</div></div>
+          <div class="metric"><div class="value" id="mReg">0</div><div class="label">Regressions</div></div>
+          <div class="metric"><div class="value" id="mClusters">0</div><div class="label">Root causes</div></div>
+        </div>
+        <div class="bug-list" id="weakList"></div>
+      </div>
+
+      <div class="card" id="detailCard">
+        <div class="empty">Choose a weakness to inspect its trigger workload and evidence.</div>
+      </div>
+    </section>
+
+    <section class="code-section" id="codeSection"></section>
+  </main>
+
+  <script>
+    const DATA = /*__ADRS_DATA__*/null;
+
+    const ALL_APPS  = ['cloudcast', 'eplb', 'llm_sql', 'prism', 'txn_scheduling'];
+    const ALL_ALGOS = ['AdaEvolve', 'Engram', 'OpenEvolve'];
+    const ALL_LLMS  = ['Claude-Opus-4.6', 'GPT-5'];
+
+    const cells = (DATA && DATA.cells) || [];
+    const cellKey = (a, g, l) => `${a}|||${g}|||${l}`;
+    const cellMap = new Map(cells.map(c => [cellKey(c.app, c.algo, c.llm), c]));
+
+    function firstAvailable() {
+      return cells[0] || null;
+    }
+    const init = firstAvailable();
+    let selected = init
+      ? { app: init.app, algo: init.algo, llm: init.llm, weakId: null }
+      : { app: ALL_APPS[0], algo: ALL_ALGOS[0], llm: ALL_LLMS[0], weakId: null };
+
+    function currentCell() { return cellMap.get(cellKey(selected.app, selected.algo, selected.llm)) || null; }
+
+    function makeTabs(containerId, values, key, availableSet) {
+      const el = document.getElementById(containerId);
+      el.innerHTML = '';
+      values.forEach(v => {
+        const available = availableSet.has(v);
+        const b = document.createElement('button');
+        b.className = `tab ${selected[key] === v ? 'active' : ''} ${available ? '' : 'disabled'}`;
+        b.textContent = v;
+        b.title = available ? '' : 'No results for this combination yet';
+        if (available) b.onclick = () => { selected[key] = v; selected.weakId = null; refresh(); };
+        el.appendChild(b);
+      });
+    }
+
+    function availableValuesFor(key) {
+      // values available given the other two selections (so disabled tabs reflect real coverage)
+      const set = new Set();
+      cells.forEach(c => {
+        const okApp  = key === 'app'  || c.app  === selected.app;
+        const okAlgo = key === 'algo' || c.algo === selected.algo;
+        const okLlm  = key === 'llm'  || c.llm  === selected.llm;
+        if (okApp && okAlgo && okLlm) set.add(c[key]);
+      });
+      return set;
+    }
+
+    function typeBadge(t) {
+      const color = t === 'correctness' ? 'red' : t === 'optimality' ? 'purple' : t === 'scalab_mem' ? 'orange' : 'green';
+      return `<span class="badge ${color}">${t}</span>`;
+    }
+
+    function refresh() {
+      makeTabs('appTabs',  ALL_APPS,  'app',  availableValuesFor('app'));
+      makeTabs('algoTabs', ALL_ALGOS, 'algo', availableValuesFor('algo'));
+      makeTabs('llmTabs',  ALL_LLMS,  'llm',  availableValuesFor('llm'));
+      const cell = currentCell();
+      const list = cell ? cell.weaknesses : [];
+      if (!selected.weakId && list.length) selected.weakId = list[0].id;
+      renderMetrics(cell);
+      renderList(list, !!cell);
+      renderDetail(cell);
+    }
+
+    function renderMetrics(cell) {
+      const ws = cell ? cell.weaknesses : [];
+      const witnesses = ws.reduce((s, w) => s + (w.size || 0), 0);
+      const crash = ws.filter(w => w.types.includes('correctness')).length;
+      const reg = ws.filter(w => w.types.some(t => t !== 'correctness')).length;
+      document.getElementById('mWitness').textContent = witnesses;
+      document.getElementById('mCrash').textContent = crash;
+      document.getElementById('mReg').textContent = reg;
+      document.getElementById('mClusters').textContent = ws.length;
+      document.getElementById('resultNote').textContent = cell
+        ? `${cell.app} · ${cell.algo} · ${cell.llm} · run ${cell.run}`
+        : `No results yet for ${selected.app} · ${selected.algo} · ${selected.llm}.`;
+    }
+
+    function renderList(list, cellExists) {
+      const el = document.getElementById('weakList');
+      el.innerHTML = '';
+      if (!list.length) {
+        el.innerHTML = cellExists
+          ? '<div class="empty">✅ P′ passed all oracle checks — no weaknesses discovered for this combination.</div>'
+          : '<div class="empty">No results for this combination yet.</div>';
+        return;
+      }
+      list.forEach((w, idx) => {
+        const div = document.createElement('div');
+        div.className = `bug-item ${w.id === selected.weakId ? 'active' : ''}`;
+        div.onclick = () => { selected.weakId = w.id; refresh(); };
+        const cause = (w.rootCause || '').split('. ')[0];
+        div.innerHTML = `
+          <div class="bug-title-row">
+            <div>
+              <div class="bug-name">${escapeHtml(w.name)}</div>
+              <div class="bug-cause">${escapeHtml(cause)}</div>
+            </div>
+            <span class="badge">C${idx}</span>
+          </div>
+          <div class="badge-row">
+            ${w.types.map(typeBadge).join('')}
+            <span class="badge ${w.evidence === 'crash' ? 'red' : 'orange'}">${w.evidence === 'crash' ? 'correctness failure' : 'regression curve'}</span>
+            <span class="badge">${w.size} witnesses</span>
+            <span class="badge">Δ ${w.delta}</span>
+          </div>`;
+        el.appendChild(div);
+      });
+    }
+
+    function renderDetail(cell) {
+      const detail = document.getElementById('detailCard');
+      const codeEl = document.getElementById('codeSection');
+      const w = cell && cell.weaknesses.find(x => x.id === selected.weakId);
+      if (!w) {
+        detail.innerHTML = '<div class="empty">Select a weakness to inspect its workload, evidence, and code.</div>';
+        if (codeEl) codeEl.innerHTML = '';
+        return;
+      }
+      const initialLines = (DATA.initialByApp && DATA.initialByApp[cell.app]) || ['(initial_program.py not available)'];
+
+      detail.innerHTML = `
+        <div class="detail-head">
+          <div>
+            <h2>${escapeHtml(w.name)}</h2>
+            <p>${cell.app} · ${cell.algo} · ${cell.llm} · trigger <span class="mono">${escapeHtml(w.triggerFunc)}</span></p>
+          </div>
+          <div class="badge-row">
+            ${w.types.map(typeBadge).join('')}
+            <span class="badge">oracle Δ ${w.delta}</span>
+          </div>
+        </div>
+
+        <div class="two-col section">
+          <div class="workload">
+            <h3>Trigger workload</h3>
+            <p>Representative <span class="mono">(c, w)</span> pair from the root-cause cluster.</p>
+            <div class="workload-grid">
+              ${Object.entries(w.workload).map(([k, v]) => `<div class="kv"><div class="k">${escapeHtml(k)}</div><div class="v">${escapeHtml(String(v))}</div></div>`).join('')}
+            </div>
+          </div>
+          <div class="evidence">
+            <h3>Evidence</h3>
+            ${w.evidence === 'curve' && w.curve ? renderChart(w) : renderCrash(w)}
+          </div>
+        </div>
+
+        ${w.rootCause ? `<div class="rootcause"><strong>Root cause (LLM hypothesis):</strong> ${escapeHtml(w.rootCause)}</div>` : ''}`;
+
+      codeEl.innerHTML = `
+        <div class="card">
+          <div class="detail-head" style="margin-bottom:12px"><h2>Source: P vs P′</h2>
+            <span class="badge">${w.highlight.length} weakness line${w.highlight.length === 1 ? '' : 's'} highlighted in P′</span></div>
+          <div class="two-col">
+            <div class="code-card codecol">
+              <div class="code-title"><span>initial_program.py</span><span>baseline P</span></div>
+              <pre>${renderFullCode(initialLines, [])}</pre>
+            </div>
+            <div class="code-card codecol">
+              <div class="code-title"><span>best_program.py</span><span>evolved P′ · <span class="hl">${w.highlight.length} flagged</span></span></div>
+              <pre id="evolvedPre">${renderFullCode(cell.evolved, w.highlight)}</pre>
+            </div>
+          </div>
+        </div>`;
+
+      // Scroll the evolved panel so the first flagged line is centered.
+      const pre = document.getElementById('evolvedPre');
+      if (pre && pre.querySelector) {
+        const first = pre.querySelector('.buggy');
+        if (first) pre.scrollTop = Math.max(0, first.offsetTop - pre.clientHeight / 2);
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // Lightweight single-pass Python syntax highlighter (handles strings/comments
+    // correctly so a '#' inside a string is not treated as a comment).
+    const PY_KW = new Set(['def','class','return','if','elif','else','for','while','in','not','and','or',
+      'import','from','as','with','try','except','finally','raise','lambda','yield','assert','break',
+      'continue','pass','global','nonlocal','del','is','async','await','True','False','None']);
+    function hlPy(line) {
+      let out = '', i = 0, n = line.length, defNext = false;
+      while (i < n) {
+        const ch = line[i];
+        if (ch === '#') { out += `<span class="t-com">${escapeHtml(line.slice(i))}</span>`; break; }
+        if (ch === '"' || ch === "'") {
+          let j = i + 1;
+          while (j < n) { if (line[j] === '\\') { j += 2; continue; } if (line[j] === ch) { j++; break; } j++; }
+          out += `<span class="t-str">${escapeHtml(line.slice(i, j))}</span>`; i = j; continue;
+        }
+        if (/[A-Za-z_]/.test(ch)) {
+          let j = i + 1; while (j < n && /[A-Za-z0-9_]/.test(line[j])) j++;
+          const word = line.slice(i, j);
+          let cls = '';
+          if (PY_KW.has(word)) cls = 't-kw';
+          else if (defNext) cls = 't-def';
+          else if (/^\s*\(/.test(line.slice(j))) cls = 't-fn';
+          defNext = (word === 'def' || word === 'class');
+          out += cls ? `<span class="${cls}">${escapeHtml(word)}</span>` : escapeHtml(word);
+          i = j; continue;
+        }
+        if (/[0-9]/.test(ch)) {
+          let j = i + 1; while (j < n && /[0-9._a-fA-FxXeE]/.test(line[j])) j++;
+          out += `<span class="t-num">${escapeHtml(line.slice(i, j))}</span>`; i = j; continue;
+        }
+        out += escapeHtml(ch); i++;
+      }
+      return out;
+    }
+
+    function renderFullCode(lines, highlight) {
+      const hl = new Set(highlight || []);
+      return lines.map((line, i) => {
+        const n = i + 1;
+        const cls = hl.has(n) ? 'line buggy' : 'line';
+        return `<span class="${cls}"><span class="num">${n}</span>${hlPy(line)}</span>`;
+      }).join('\n');
+    }
+
+    function renderCrash(w) {
+      const wl = Object.entries(w.workload).map(([k, v]) => `${k}=${v}`).join(', ');
+      return `
+        <p>P′ failed the <strong>correctness</strong> oracle on this workload (crash, timeout, or invalid output). No re-runnable trace is stored — reproduce with the workload below.</p>
+        <div class="crash-box">app: ${escapeHtml(w.id.split('-')[0])}
+trigger: ${escapeHtml(w.triggerFunc)}
+oracle: correctness  (Δ ${w.delta})
+workload: ${escapeHtml(wl)}</div>`;
+    }
+
+    function renderChart(w) {
+      const c = w.curve, data = c.points;
+      const W = 520, H = 260, pad = 44;
+      const yVals = data.flatMap(d => [d.initial, d.evolved]);
+      const maxY = Math.max(...yVals) * 1.12 || 1;
+      const minY = Math.min(0, ...yVals);
+      const n = Math.max(1, data.length - 1);
+      const xScale = i => pad + i * ((W - pad * 2) / n);
+      const yScale = v => H - pad - ((v - minY) / (maxY - minY || 1)) * (H - pad * 2);
+      const path = key => data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(d[key])}`).join(' ');
+      return `
+        <p>Aggregated P (baseline) vs P′ (evolved) across <span class="mono">${escapeHtml(c.xParam)}</span> — the discovered witnesses, no re-run.</p>
+        <div class="chart-wrap">
+          <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Regression curve">
+            <line x1="${pad}" y1="${H-pad}" x2="${W-pad}" y2="${H-pad}" stroke="#cbd5e1" />
+            <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${H-pad}" stroke="#cbd5e1" />
+            <text x="${pad-2}" y="20" font-size="12" fill="#64748b">${escapeHtml(c.yUnit)}</text>
+            ${data.map((d, i) => `<text x="${xScale(i)-10}" y="${H-16}" font-size="10" fill="#64748b">${d.x}</text>`).join('')}
+            <path d="${path('initial')}" fill="none" stroke="#059669" stroke-width="3" />
+            <path d="${path('evolved')}" fill="none" stroke="#dc2626" stroke-width="3" />
+            ${data.map((d, i) => `<circle cx="${xScale(i)}" cy="${yScale(d.initial)}" r="4" fill="#059669" /><circle cx="${xScale(i)}" cy="${yScale(d.evolved)}" r="4" fill="#dc2626" />`).join('')}
+            <text x="${W-pad-70}" y="${H-16}" font-size="11" fill="#64748b">x = ${escapeHtml(c.xParam)}</text>
+          </svg>
+        </div>
+        <div class="legend">
+          <span class="legend-item"><span class="swatch green"></span>initial program P</span>
+          <span class="legend-item"><span class="swatch red"></span>AI-evolved P′</span>
+        </div>`;
+    }
+
+    refresh();
+  </script>
+</body>
+</html>

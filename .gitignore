@@ -70,6 +70,11 @@ aichilles_risk_discovery/old_results/
 *.csv
 .hypothesis/
 
-# Keep README assets (logo, overview figure) despite the *.png rule above
+# Keep README + GitHub Pages assets (logo, overview figure) despite the *.png rule above
 !assets/
 !assets/*.png
+!docs/
+!docs/**/*.png
+
+# Scratch demo output — regenerate to docs/explorer/index.html instead
+aichilles_risk_discovery/demo/explorer.html
