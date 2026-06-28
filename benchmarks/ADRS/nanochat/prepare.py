@@ -153,6 +153,15 @@ def main():
     assert "text" in pq.read_table(vp).column_names                        # lib._document_batches
     print(f"OK -> data ready under {args.out}  (set DATA_DIR or symlink /data)")
 
+    # All files are written/flushed above. Skip interpreter finalization to dodge a
+    # benign native-threadpool teardown crash (tiktoken/pyarrow rust threads):
+    # "PyGILState_Release: thread state must be current". Cosmetic, but it makes the
+    # process exit non-zero, so we exit cleanly here instead.
+    import sys
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
+
 
 if __name__ == "__main__":
     main()
