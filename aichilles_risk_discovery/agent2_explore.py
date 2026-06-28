@@ -100,7 +100,13 @@ def _behavior_vector(raw_counts: dict, n_lines: int, w: dict,
     workload after the first)."""
     if len(raw_counts) > 3:
         return normalize_vector(coverage_to_vector(raw_counts, n_lines))
-    return _workload_to_vector(w, names, ranges)
+    # Param-space descriptor, resized to n_lines so it stays shape-compatible with the
+    # archive's zeros(n_lines) seed and any coverage vectors (avoids broadcast errors).
+    pv = _workload_to_vector(w, names, ranges)
+    out = np.zeros(n_lines, dtype=float)
+    m = min(len(pv), n_lines)
+    out[:m] = pv[:m]
+    return out
 
 
 def _grammar_param_info(grammar: dict) -> dict[str, str]:
