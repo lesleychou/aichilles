@@ -70,22 +70,43 @@ def _pdeathsig():  # pragma: no cover - Linux child-process setup
         pass
 
 
-def _run_once(script, base_env, seed, backstop, preexec):
-    """Run one training subprocess at `seed`; return parsed metrics or raise."""
+def _run_once(script, base_env, seed, preexec, label):
+    """Run one training subprocess at `seed`, STREAMING its live progress
+    (the script's own 'step | loss | remaining' line) to stderr so the user can
+    watch each training. Returns parsed metrics or raises. The harness --timeout
+    is the hang backstop (it SIGKILLs the worker -> PR_SET_PDEATHSIG kills this child)."""
     env = {**base_env, "SEED": str(seed)}
+    sys.stderr.write(f"      [{label} | seed {seed} | depth {env['DEPTH']} | seq {env['SEQ_LEN']} "
+                     f"| bs {env['DEVICE_BATCH_SIZE']} | budget {env['TIME_BUDGET']}s]\n")
+    sys.stderr.flush()
+    proc = subprocess.Popen([sys.executable, script], stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, env=env, preexec_fn=preexec)
+    chunks = []
     try:
-        p = subprocess.run([sys.executable, script], capture_output=True, text=True,
-                           env=env, timeout=backstop, preexec_fn=preexec)
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(f"training (seed {seed}) exceeded {backstop}s backstop") from exc
-    out, err = p.stdout, p.stderr
+        while True:
+            chunk = proc.stdout.read(80)  # small chunks so the \r progress line streams live
+            if chunk:
+                chunks.append(chunk)
+                sys.stderr.write(chunk)
+                sys.stderr.flush()
+            elif proc.poll() is not None:
+                break
+    finally:
+        try:
+            proc.stdout.close()
+        except Exception:
+            pass
+        proc.wait()
+    sys.stderr.write("\n")
+    sys.stderr.flush()
+    out = "".join(chunks)
     vals = {}
     for key, rx in _METRIC_RE.items():
         m = rx.search(out)
         if m:
             vals[key] = float(m.group(1))
     if "val_bpb" not in vals:  # no result -> real crash / OOM / timeout
-        raise RuntimeError((err or out)[-1500:] or f"seed {seed}: no val_bpb (crash / OOM)")
+        raise RuntimeError(out[-1500:] or f"seed {seed}: no val_bpb (crash / OOM)")
     return vals
 
 
@@ -98,7 +119,7 @@ def run_workload(program_module, workload: dict):
         "TIME_BUDGET":       str(workload.get("time_budget", 30)),
     }
     script = program_module.PROGRAM_SCRIPT
-    backstop = int(base_env["TIME_BUDGET"]) + 1200  # per-seed safety; harness timeout is primary
+    label = os.path.basename(script)
     preexec = _pdeathsig if sys.platform.startswith("linux") else None
 
     base_seed = int(workload.get("seed", 42))
@@ -107,7 +128,7 @@ def run_workload(program_module, workload: dict):
 
     bpbs, steps, vrams, secs = [], [], [], []
     for i in range(n_seeds):  # any seed that crashes/OOMs raises -> correctness witness
-        vals = _run_once(script, base_env, base_seed + i, backstop, preexec)
+        vals = _run_once(script, base_env, base_seed + i, preexec, label)
         bpbs.append(vals["val_bpb"])
         steps.append(vals.get("num_steps", 0.0))
         vrams.append(vals.get("peak_vram_mb", 0.0))

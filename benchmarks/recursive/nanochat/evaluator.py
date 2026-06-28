@@ -40,9 +40,9 @@ GRAMMAR_WORKLOAD = {
     "seed":              {"type": "int", "min": 0, "max": 100000},
     # sequence length (true input); must be <= 2048 (rotary precompute ceiling).
     "seq_len":           {"type": "int", "min": 256, "max": 2048, "multiple_of": 128},
-    # training wall-clock budget; keep SMALL during search (cheap proxy), raise
-    # only to confirm a flagged optimality regression.
-    "time_budget":       {"type": "int", "min": 20, "max": 300},
+    # training wall-clock budget; kept SMALL so the search stays cheap (each oracle
+    # call runs several trainings). Raise the max for a faithful confirmation pass.
+    "time_budget":       {"type": "int", "min": 20, "max": 60},
     # transformer depth (config). Sweeping up probes depth-coupled assumptions in
     # P' (hardcoded per-layer tables -> IndexError crash at large depth).
     "depth":             {"type": "int", "min": 4, "max": 16},

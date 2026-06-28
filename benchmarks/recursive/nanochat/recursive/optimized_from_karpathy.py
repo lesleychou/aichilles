@@ -1003,7 +1003,8 @@ for group in optimizer.param_groups:
         if group.get("demon_beta1", False):
             adam_demon_groups.append((group, group["betas"][1]))
 
-model = torch.compile(model, dynamic=False, mode="max-autotune", fullgraph=True)
+if os.environ.get("AICHILLES_EAGER") != "1":  # AICHILLES_EAGER=1 -> eager (skip compile) for fast search
+    model = torch.compile(model, dynamic=False, mode="max-autotune", fullgraph=True)
 
 train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
 x, y, epoch = next(train_loader)  # prefetch first batch

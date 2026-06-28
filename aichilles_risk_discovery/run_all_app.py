@@ -71,6 +71,13 @@ def main():
     parser.add_argument("--confirm-seeds", type=int, default=0,
                         help="On a flagged regression, re-run the workload at this many "
                              "seeds and keep the witness only if it reproduces. 0 = off.")
+    parser.add_argument("--eager", action="store_true",
+                        help="Run nanochat programs WITHOUT torch.compile (sets "
+                             "$AICHILLES_EAGER=1). Much faster per training during search; "
+                             "differential stays fair (both P and P' run eager).")
+    parser.add_argument("--eval-tokens", type=int, default=0,
+                        help="Override nanochat eval length ($AICHILLES_EVAL_TOKENS), e.g. "
+                             "2097152 (~10x shorter eval, saves ~15s/training). 0 = script default.")
     _SIG_NAMES = ["correctness", "scalab_time", "scalab_mem", "optimality"]
     parser.add_argument("--skip_agent1", action="store_true",
                         help="Skip Agent 1 — use existing grammar.json in results_dir")
@@ -84,9 +91,14 @@ def main():
                         help="Reuse an existing results directory (for --skip_agent1/2)")
     args = parser.parse_args()
 
-    # Screen-seed count is read by run_workload in the forked workers via env.
+    # Screen-seed count and eager mode are read by the training subprocess via env
+    # (inherited through the forked workers + run_workload).
     import os
     os.environ["AICHILLES_SCREEN_SEEDS"] = str(args.screen_seeds)
+    if args.eager:
+        os.environ["AICHILLES_EAGER"] = "1"
+    if args.eval_tokens:
+        os.environ["AICHILLES_EVAL_TOKENS"] = str(args.eval_tokens)
 
     # Lazy imports to avoid top-level import failures when running --help
     import anthropic

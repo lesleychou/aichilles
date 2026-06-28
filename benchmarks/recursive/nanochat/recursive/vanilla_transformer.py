@@ -314,7 +314,8 @@ optimizer = torch.optim.AdamW(
     weight_decay=WEIGHT_DECAY,
 )
 
-model = torch.compile(model, dynamic=False)
+if os.environ.get("AICHILLES_EAGER") != "1":  # AICHILLES_EAGER=1 -> eager (skip compile) for fast search
+    model = torch.compile(model, dynamic=False)
 
 train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
 x, y, epoch = next(train_loader)  # prefetch first batch

@@ -12,7 +12,7 @@ import torch
 
 MAX_SEQ_LEN = int(os.environ.get("SEQ_LEN", 2048))
 TIME_BUDGET = int(os.environ.get("TIME_BUDGET", 300))
-EVAL_TOKENS = 40 * 524288
+EVAL_TOKENS = int(os.environ.get("AICHILLES_EVAL_TOKENS", 40 * 524288))
 
 # Point DATA_DIR at the directory holding the data shards and tokenizer.
 DATA_DIR = os.environ.get("DATA_DIR", "/data")

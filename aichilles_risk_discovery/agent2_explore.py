@@ -386,6 +386,8 @@ def run_agent_type(
             ):
                 continue
 
+            print(f"[agent2/{sig.value}] eval {oracle_calls + 1}/{budget} | "
+                  f"w={ {k: w[k] for k in sorted(w) if k != 'n_seeds'} }", flush=True)
             # Step a: collect coverage from P' (1 seed — its output isn't scored)
             result_pp_cov = run_one(str(best_program_path), run_workload_code, {**w, "n_seeds": 1},
                                     timeout=timeout, collect_coverage=True, app_dir=str(app_dir))
@@ -452,6 +454,8 @@ def run_agent_type(
                     result_p, result_pp_oracle = rp_c, rpp_c
                 print(f"  [confirm@{confirm_seeds}] {'held' if fired_sigs else 'rejected'}")
             label = "BUG" if fired_sigs else "NO_BUG"
+            print(f"[agent2/{sig.value}]   -> {label}"
+                  + (f"  {fired_sigs} delta={max_delta:.3f}" if fired_sigs else ""), flush=True)
 
             entry = {
                 "c": c, "w": w,
