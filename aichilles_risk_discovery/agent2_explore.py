@@ -47,6 +47,62 @@ def _count_lines(program_path: Path) -> int:
     return len(program_path.read_text().splitlines())
 
 
+# Reference scales for the degenerate-coverage fallback below; unknown params auto-scale.
+_FALLBACK_PARAM_SCALE = {
+    "seed": (0.0, 100000.0), "depth": (1.0, 20.0), "seq_len": (128.0, 2048.0),
+    "device_batch_size": (1.0, 96.0), "time_budget": (10.0, 300.0),
+}
+
+
+def _grammar_numeric_names(grammar: dict) -> list[str]:
+    """Canonical sorted workload param names (keeps the fallback vector fixed-length)."""
+    gw = grammar.get("grammar_workload", {})
+    if isinstance(gw, dict):
+        return sorted(gw.keys())
+    if isinstance(gw, list):
+        return sorted(s["name"] for s in gw if isinstance(s, dict) and "name" in s)
+    return []
+
+
+def _grammar_ranges(grammar: dict) -> dict:
+    gw = grammar.get("grammar_workload", {})
+    ranges = {}
+    if isinstance(gw, dict):
+        for name, s in gw.items():
+            if isinstance(s, dict) and isinstance(s.get("min"), (int, float)) \
+                    and isinstance(s.get("max"), (int, float)):
+                ranges[name] = (float(s["min"]), float(s["max"]))
+    return ranges
+
+
+def _workload_to_vector(w: dict, names: list[str], ranges: dict) -> np.ndarray:
+    """[0,1]-scaled fixed-length vector over workload params — each param contributes
+    equally to MAP-Elites novelty when code coverage is uninformative."""
+    vec = []
+    for name in names:
+        lo, hi = ranges.get(name) or _FALLBACK_PARAM_SCALE.get(name, (0.0, 0.0))
+        val = w.get(name)
+        if isinstance(val, (int, float)):
+            if hi <= lo:
+                hi = lo + max(abs(float(val)), 1.0)
+            vec.append(min(1.0, max(0.0, (float(val) - lo) / (hi - lo))))
+        else:
+            vec.append(0.0)
+    return np.array(vec, dtype=float) if vec else np.zeros(1)
+
+
+def _behavior_vector(raw_counts: dict, n_lines: int, w: dict,
+                     names: list[str], ranges: dict) -> np.ndarray:
+    """MAP-Elites behavior descriptor. Normally code coverage; but when coverage is
+    degenerate (<=3 distinct lines — e.g. a thin program shim whose real work runs in a
+    subprocess invisible to sys.settrace), fall back to a parameter-space descriptor so
+    novelty still varies across workloads (otherwise the novelty filter rejects every
+    workload after the first)."""
+    if len(raw_counts) > 3:
+        return normalize_vector(coverage_to_vector(raw_counts, n_lines))
+    return _workload_to_vector(w, names, ranges)
+
+
 def _grammar_param_info(grammar: dict) -> dict[str, str]:
     grammar_workload = grammar.get("grammar_workload", {})
     if isinstance(grammar_workload, list):
@@ -174,6 +230,8 @@ def run_agent_type(
     budget: int = 50,
     patience: int = 5,
     theta: float = _DEFAULT_NOVELTY_THETA,
+    timeout: int = 30,
+    confirm_seeds: int = 0,
     crash_workloads: list[dict] | None = None,
 ) -> tuple[dict, list[dict]]:
     """
@@ -203,6 +261,10 @@ def run_agent_type(
     grammar = json.loads(grammar_path.read_text())
     generate_workload_code = generate_path.read_text()
     run_workload_code = rw_path.read_text() + "\n\n" + generate_workload_code
+    # Param-space fallback inputs for the behavior descriptor (used when coverage
+    # is degenerate, e.g. subprocess-executed programs like nanochat).
+    _param_names = _grammar_numeric_names(grammar)
+    _param_ranges = _grammar_ranges(grammar)
 
     initial_path = app_dir / "initial_program.py"
     n_lines = _count_lines(best_program_path)
@@ -235,20 +297,19 @@ def run_agent_type(
             w = seed.get("w", {})
             if sig != Signature.CORRECTNESS and any(w == crash_wl for crash_wl in crash_workloads):
                 continue
-            result_pp = run_one(str(best_program_path), run_workload_code, w,
-                                timeout=30, collect_coverage=True, app_dir=str(app_dir))
+            result_pp = run_one(str(best_program_path), run_workload_code, {**w, "n_seeds": 1},
+                                timeout=timeout, collect_coverage=True, app_dir=str(app_dir))
             if result_pp.get("error") and sig != Signature.CORRECTNESS:
                 continue
             raw_counts = result_pp.get("coverage", {})
-            v = coverage_to_vector(raw_counts, n_lines)
-            v_norm = normalize_vector(v)
+            v_norm = _behavior_vector(raw_counts, n_lines, w, _param_names, _param_ranges)
             # Run P' again without coverage for clean timing/memory oracle comparison.
             # The covered run inflates wall-clock time 2-5x via sys.settrace overhead,
             # causing systematic scalab_time false positives if used directly.
             result_pp_oracle = run_one(str(best_program_path), run_workload_code, w,
-                                       timeout=30, collect_coverage=False, app_dir=str(app_dir))
+                                       timeout=timeout, collect_coverage=False, app_dir=str(app_dir))
             result_p = run_one(str(initial_path), run_workload_code, w,
-                               timeout=30, collect_coverage=False, app_dir=str(app_dir))
+                               timeout=timeout, collect_coverage=False, app_dir=str(app_dir))
             oracle_calls += 1
             fired_sigs, max_delta = _check_all_signatures(result_p, result_pp_oracle)
             label = "BUG" if fired_sigs else "NO_BUG"
@@ -319,14 +380,14 @@ def run_agent_type(
             ):
                 continue
 
-            # Step a: collect coverage from P'
-            result_pp_cov = run_one(str(best_program_path), run_workload_code, w,
-                                    timeout=30, collect_coverage=True, app_dir=str(app_dir))
+            # Step a: collect coverage from P' (1 seed — its output isn't scored)
+            result_pp_cov = run_one(str(best_program_path), run_workload_code, {**w, "n_seeds": 1},
+                                    timeout=timeout, collect_coverage=True, app_dir=str(app_dir))
 
             # Handle P' timeout as scalab_time witness
             if result_pp_cov.get("error") == "timeout":
                 result_p_check = run_one(str(initial_path), run_workload_code, w,
-                                         timeout=30, collect_coverage=False, app_dir=str(app_dir))
+                                         timeout=timeout, collect_coverage=False, app_dir=str(app_dir))
                 oracle_calls += 1
                 if result_p_check.get("error") is None:
                     timeout_entry = {
@@ -356,8 +417,7 @@ def run_agent_type(
                 continue
 
             raw_counts = result_pp_cov.get("coverage", {})
-            v = coverage_to_vector(raw_counts, n_lines)
-            v_norm = normalize_vector(v)
+            v_norm = _behavior_vector(raw_counts, n_lines, w, _param_names, _param_ranges)
 
             # Coverage novelty filter (coverage-only — no param distance)
             if compute_novelty(v_norm, archive.all_vectors()) < theta:
@@ -367,12 +427,24 @@ def run_agent_type(
             # The covered run inflates wall-clock time 2-5x via sys.settrace overhead,
             # causing systematic scalab_time false positives if used directly.
             result_pp_oracle = run_one(str(best_program_path), run_workload_code, w,
-                                       timeout=30, collect_coverage=False, app_dir=str(app_dir))
+                                       timeout=timeout, collect_coverage=False, app_dir=str(app_dir))
             result_p = run_one(str(initial_path), run_workload_code, w,
-                               timeout=30, collect_coverage=False, app_dir=str(app_dir))
+                               timeout=timeout, collect_coverage=False, app_dir=str(app_dir))
             oracle_calls += 1
 
             fired_sigs, max_delta = _check_all_signatures(result_p, result_pp_oracle)
+            # Escalating confirmation: re-run a flagged workload at more seeds and keep
+            # the witness only if the regression reproduces (controls single-run noise).
+            if confirm_seeds and fired_sigs:
+                w_conf = {**w, "n_seeds": confirm_seeds}
+                rp_c = run_one(str(initial_path), run_workload_code, w_conf,
+                               timeout=timeout, collect_coverage=False, app_dir=str(app_dir))
+                rpp_c = run_one(str(best_program_path), run_workload_code, w_conf,
+                                timeout=timeout, collect_coverage=False, app_dir=str(app_dir))
+                fired_sigs, max_delta = _check_all_signatures(rp_c, rpp_c)
+                if fired_sigs:  # record the confirmed run's metrics
+                    result_p, result_pp_oracle = rp_c, rpp_c
+                print(f"  [confirm@{confirm_seeds}] {'held' if fired_sigs else 'rejected'}")
             label = "BUG" if fired_sigs else "NO_BUG"
 
             entry = {

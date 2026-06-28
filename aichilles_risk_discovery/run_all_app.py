@@ -18,10 +18,25 @@ import datetime
 import json
 from pathlib import Path
 
-_ADRS_ROOT = Path(__file__).parent.parent / "benchmarks" / "ADRS"
+_BENCH_ROOT = Path(__file__).parent.parent / "benchmarks"
+_ADRS_ROOT = _BENCH_ROOT / "ADRS"
+# App roots searched in order. Apps may live under benchmarks/ADRS/ or
+# benchmarks/recursive/ (e.g. the recursive nanochat app).
+_APP_ROOTS = [_ADRS_ROOT, _BENCH_ROOT / "recursive"]
 _RESULTS_ROOT = Path(__file__).parent / "results"
 
-APPS = ["cloudcast", "eplb", "llm_sql", "prism", "txn_scheduling"]
+APPS = ["cloudcast", "eplb", "llm_sql", "prism", "txn_scheduling", "nanochat"]
+
+
+def _resolve_app_dir(app: str) -> Path:
+    for root in _APP_ROOTS:
+        candidate = root / app
+        if candidate.exists():
+            return candidate
+    raise SystemExit(
+        f"App directory not found for '{app}' under: "
+        + ", ".join(str(r) for r in _APP_ROOTS)
+    )
 
 
 def _merge_matrix_v(results_dir: Path) -> None:
@@ -46,6 +61,16 @@ def main():
     parser.add_argument("--budget", type=int, default=200)
     parser.add_argument("--patience", type=int, default=5)
     parser.add_argument("--theta", type=float, default=0.1)
+    parser.add_argument("--timeout", type=int, default=30,
+                        help="Per-call harness timeout (s). Raise for slow apps "
+                             "like nanochat whose programs train a model per call. "
+                             "Must cover ALL screen-seeds trainings in one call.")
+    parser.add_argument("--screen-seeds", type=int, default=3,
+                        help="Seeds averaged per oracle call to cut single-run noise "
+                             "(nanochat run_workload reads $AICHILLES_SCREEN_SEEDS).")
+    parser.add_argument("--confirm-seeds", type=int, default=0,
+                        help="On a flagged regression, re-run the workload at this many "
+                             "seeds and keep the witness only if it reproduces. 0 = off.")
     _SIG_NAMES = ["correctness", "scalab_time", "scalab_mem", "optimality"]
     parser.add_argument("--skip_agent1", action="store_true",
                         help="Skip Agent 1 — use existing grammar.json in results_dir")
@@ -59,6 +84,10 @@ def main():
                         help="Reuse an existing results directory (for --skip_agent1/2)")
     args = parser.parse_args()
 
+    # Screen-seed count is read by run_workload in the forked workers via env.
+    import os
+    os.environ["AICHILLES_SCREEN_SEEDS"] = str(args.screen_seeds)
+
     # Lazy imports to avoid top-level import failures when running --help
     import anthropic
     from agent1_infer import run_agent1
@@ -67,7 +96,7 @@ def main():
     from knowledge_base import load_knowledge_base, save_knowledge_base, extract_transferable
     from oracle import Signature
 
-    app_dir = _ADRS_ROOT / args.app
+    app_dir = _resolve_app_dir(args.app)
     best_program_path = Path(args.best_program).resolve()
 
     if not app_dir.exists():
@@ -143,6 +172,8 @@ def main():
                 budget=budget_per_agent,
                 patience=args.patience,
                 theta=args.theta,
+                timeout=args.timeout,
+                confirm_seeds=args.confirm_seeds,
                 crash_workloads=crash_workloads,
             )
             crash_workloads = crash_workloads + new_crashes

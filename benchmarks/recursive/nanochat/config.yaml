@@ -1,0 +1,24 @@
+# Recursive nanochat — language-model pretraining (differential weakness target)
+# NOTE: AIChilles plumbs the harness timeout via run_all_app.py --timeout (the
+# agents do NOT read this file's evaluator.timeout). It's kept for parity with
+# the ADRS apps and to document intent.
+language: python
+diff_based_generation: true
+max_iterations: 100
+checkpoint_interval: 5
+max_solution_length: 200000
+
+prompt:
+  system_message: |-
+    The program is a single-file, single-GPU language-model pretraining script
+    (recursive nanochat). It trains a transformer for a fixed wall-clock budget and
+    is scored by validation bits-per-byte (BPB, lower is better). P is the vanilla
+    baseline; P' is an AI-evolved optimization. The goal of AIChilles is to find
+    valid workloads (seed, depth, seq_len, device_batch_size, time_budget) where P'
+    regresses vs P in correctness (crash/OOM), throughput (fewer steps), memory, or
+    output quality (BPB).
+
+evaluator:
+  # Generous because each call is a full training subprocess (compile + train + eval).
+  # The real harness timeout comes from `run_all_app.py --timeout`.
+  timeout: 1200
