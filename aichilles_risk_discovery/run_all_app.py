@@ -99,6 +99,13 @@ def main():
         os.environ["AICHILLES_EAGER"] = "1"
     if args.eval_tokens:
         os.environ["AICHILLES_EVAL_TOKENS"] = str(args.eval_tokens)
+    # nanochat trains in a subprocess, so the harness's in-process sys.settrace
+    # coverage only sees the program's import-time def lines (identical for every
+    # workload) — useless for novelty AND for Agent 3's trigger/anomalous-lines.
+    # Disable it: Agent 2 falls back to param-space novelty, and Agent 3 root-causes
+    # from the crash traceback (run_workload surfaces the real file:line).
+    if args.app == "nanochat":
+        os.environ["AICHILLES_NO_COVERAGE"] = "1"
 
     # Lazy imports to avoid top-level import failures when running --help
     import anthropic

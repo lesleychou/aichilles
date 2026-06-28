@@ -25,70 +25,10 @@ import torch._inductor.config as inductor_config
 import torch.nn as nn
 import torch.nn.functional as F
 
-cap = torch.cuda.get_device_capability()
-
-if cap[0] >= 10:
-    # Blackwell (B200, SM100): wrap flash-attn-4 as a custom op so torch.compile
-    # treats it as opaque (no tracing into cutlass DSL, no recompile-cache thrash,
-    # no per-call Python kernel build).
-    from flash_attn.cute import flash_attn_func as _fa4_raw
-    from flash_attn.cute.interface import _flash_attn_bwd as _fa4_bwd_raw
-
-    @torch.library.custom_op("fa4::fa4_causal", mutates_args=())
-    def _fa4_causal_op(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
-                       window_left: int) -> tuple[torch.Tensor, torch.Tensor]:
-        ws = (window_left, 0) if window_left > 0 else (None, None)
-        out, lse = _fa4_raw(q, k, v, causal=True, window_size=ws, return_lse=True)
-        return out, lse
-
-    @_fa4_causal_op.register_fake
-    def _fa4_causal_fake(q, k, v, window_left):
-        B, T, H, D = q.shape
-        return torch.empty_like(q), torch.empty(B, H, T, device=q.device, dtype=torch.float32)
-
-    def _fa4_setup_context(ctx, inputs, output):
-        q, k, v, window_left = inputs
-        out, lse = output
-        ctx.save_for_backward(q, k, v, out, lse)
-        ctx.window_left = window_left
-
-    @torch.library.custom_op("fa4::fa4_bwd", mutates_args=())
-    def _fa4_bwd_op(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
-                    out: torch.Tensor, grad_output: torch.Tensor, lse: torch.Tensor,
-                    window_left: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        wl = window_left if window_left > 0 else None
-        dq, dk, dv = _fa4_bwd_raw(
-            q, k, v, out, grad_output, lse,
-            causal=True, window_size_left=wl, window_size_right=0,
-        )
-        return dq, dk, dv
-
-    @_fa4_bwd_op.register_fake
-    def _fa4_bwd_fake(q, k, v, out, grad_output, lse, window_left):
-        return torch.empty_like(q), torch.empty_like(k), torch.empty_like(v)
-
-    def _fa4_backward(ctx, grad_output, grad_lse):
-        q, k, v, out, lse = ctx.saved_tensors
-        dq, dk, dv = torch.ops.fa4.fa4_bwd(q, k, v, out, grad_output, lse, ctx.window_left)
-        return dq, dk, dv, None
-
-    _fa4_causal_op.register_autograd(_fa4_backward, setup_context=_fa4_setup_context)
-
-    def flash_attn_func(q, k, v, causal=True, window_size=(-1, -1)):
-        wl = window_size[0] if isinstance(window_size, tuple) else window_size
-        if wl is None or wl <= 0 or wl >= q.shape[1]:
-            wl = -1
-        out, _lse = torch.ops.fa4.fa4_causal(q, k, v, wl)
-        return out
-
-    print(f"Using flash-attn-4 as custom op (GPU capability {cap})")
-else:
-    # Hopper/Ampere (H100, A100): use flash-attn-3 via kernels package
-    from kernels import get_kernel
-
-    repo = "varunneal/flash-attention-3" if cap == (9, 0) else "kernels-community/flash-attn3"
-    flash_attn_func = get_kernel(repo).flash_attn_interface.flash_attn_func
-    print(f"Using flash-attn-3 from {repo} (GPU capability {cap})")
+# NOTE: flash-attn-4 custom-op block removed (dead code: the SDPA override
+#       below replaces flash_attn_func, and FA4 is broken on this stack).
+#       Removing it also keeps this module's IMPORT cheap (no CUDA init),
+#       which matters because AIChilles imports it on every oracle call.
 
 from lib import MAX_SEQ_LEN, TIME_BUDGET, Tokenizer, evaluate_bpb, make_dataloader  # noqa: E402
 
@@ -916,375 +856,385 @@ DEVICE_BATCH_SIZE = int(os.environ.get("DEVICE_BATCH_SIZE", 72))  # per-device b
 # Setup: tokenizer, model, optimizer, dataloader
 # ---------------------------------------------------------------------------
 
-t_start = time.time()
-_SEED = int(os.environ.get("SEED", 42))
-torch.manual_seed(_SEED)
-torch.cuda.manual_seed(_SEED)
-torch.set_float32_matmul_precision("high")
-device = torch.device("cuda")
-# No autocast: model is natively BF16 -- eliminates FP32->BF16 cast overhead in compile graph
-autocast_ctx = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=False)
-B200_BF16_PEAK_FLOPS = 2.25e15
-
-tokenizer = Tokenizer.from_directory()
-vocab_size = tokenizer.get_vocab_size()
-print(f"Vocab size: {vocab_size:,}")
 
 
-def build_model_config(depth):
-    base_dim = depth * ASPECT_RATIO
-    model_dim = ((base_dim + HEAD_DIM - 1) // HEAD_DIM) * HEAD_DIM
-    num_heads = model_dim // HEAD_DIM
-    return GPTConfig(
-        sequence_len=MAX_SEQ_LEN,
-        vocab_size=vocab_size,
-        n_layer=depth,
-        n_head=num_heads,
-        n_kv_head=num_heads,
-        n_embd=model_dim,
-        window_pattern=WINDOW_PATTERN,
+# --- Train block: runs ONLY as a subprocess (AICHILLES_RUN=1) or `python <file>`.
+#     Imported (by the AIChilles harness / Agent 3) it is skipped, so import is
+#     side-effect free: no tokenizer load, no model build, no training. ---
+if __name__ == "__main__" or os.environ.get("AICHILLES_RUN") == "1":
+    t_start = time.time()
+    _SEED = int(os.environ.get("SEED", 42))
+    torch.manual_seed(_SEED)
+    torch.cuda.manual_seed(_SEED)
+    torch.set_float32_matmul_precision("high")
+    device = torch.device("cuda")
+    # No autocast: model is natively BF16 -- eliminates FP32->BF16 cast overhead in compile graph
+    autocast_ctx = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=False)
+    B200_BF16_PEAK_FLOPS = 2.25e15
+
+    tokenizer = Tokenizer.from_directory()
+    vocab_size = tokenizer.get_vocab_size()
+    print(f"Vocab size: {vocab_size:,}")
+
+
+    def build_model_config(depth):
+        base_dim = depth * ASPECT_RATIO
+        model_dim = ((base_dim + HEAD_DIM - 1) // HEAD_DIM) * HEAD_DIM
+        num_heads = model_dim // HEAD_DIM
+        return GPTConfig(
+            sequence_len=MAX_SEQ_LEN,
+            vocab_size=vocab_size,
+            n_layer=depth,
+            n_head=num_heads,
+            n_kv_head=num_heads,
+            n_embd=model_dim,
+            window_pattern=WINDOW_PATTERN,
+        )
+
+
+    config = build_model_config(DEPTH)
+    print(f"Model config: {asdict(config)}")
+
+    with torch.device("meta"):
+        model = GPT(config)
+    model.to_empty(device=device)
+    model.init_weights()
+    # Cast entire model to BF16: enables removing autocast, simplifies compile graph
+    model.to(dtype=torch.bfloat16)
+
+    param_counts = model.num_scaling_params()
+    print("Parameter counts:")
+    for key, value in param_counts.items():
+        print(f"  {key:24s}: {value:,}")
+    num_params = param_counts["total"]
+    num_flops_per_token = model.estimate_flops()
+    print(f"Estimated FLOPs per token: {num_flops_per_token:e}")
+
+    tokens_per_fwdbwd = DEVICE_BATCH_SIZE * MAX_SEQ_LEN
+    # config-robustness: tolerate device_batch_size/seq_len that do not exactly divide
+    # TOTAL_BATCH_SIZE (AIChilles sweeps these) instead of asserting and crashing.
+    grad_accum_steps = max(1, round(TOTAL_BATCH_SIZE / tokens_per_fwdbwd))
+
+    optimizer = model.setup_optimizer(
+        unembedding_lr=UNEMBEDDING_LR,
+        embedding_lr=EMBEDDING_LR,
+        scalar_lr=SCALAR_LR,
+        adam_betas=ADAM_BETAS,
+        matrix_lr=MATRIX_LR,
+        weight_decay=WEIGHT_DECAY,
+        ngram_ve_betas=NGRAM_VE_BETAS,
+        ngram_ve_lr_scale=NGRAM_VE_LR_SCALE,
     )
 
+    muon_groups = []
+    ngram_groups = []
+    x0_warmdown_groups = []
+    adam_groups = []
+    adam_demon_groups = []
+    muon_group_lrs = []
+    x0_group_lrs = []
+    adam_group_lrs = []
+    for group in optimizer.param_groups:
+        if group["kind"] == "muon":
+            muon_groups.append(group)
+            muon_group_lrs.append((group, group["initial_lr"]))
+        elif group.get("is_ngram_ve", False):
+            ngram_groups.append(group)
+        elif group.get("is_x0_muon_warmdown", False):
+            x0_warmdown_groups.append(group)
+            x0_group_lrs.append((group, group["initial_lr"]))
+        else:
+            adam_groups.append(group)
+            adam_group_lrs.append((group, group["initial_lr"]))
+            if group.get("demon_beta1", False):
+                adam_demon_groups.append((group, group["betas"][1]))
 
-config = build_model_config(DEPTH)
-print(f"Model config: {asdict(config)}")
+    if os.environ.get("AICHILLES_EAGER") != "1":  # AICHILLES_EAGER=1 -> eager (skip compile) for fast search
+        model = torch.compile(model, dynamic=False, mode="max-autotune", fullgraph=True)
 
-with torch.device("meta"):
-    model = GPT(config)
-model.to_empty(device=device)
-model.init_weights()
-# Cast entire model to BF16: enables removing autocast, simplifies compile graph
-model.to(dtype=torch.bfloat16)
+    train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
+    x, y, epoch = next(train_loader)  # prefetch first batch
 
-param_counts = model.num_scaling_params()
-print("Parameter counts:")
-for key, value in param_counts.items():
-    print(f"  {key:24s}: {value:,}")
-num_params = param_counts["total"]
-num_flops_per_token = model.estimate_flops()
-print(f"Estimated FLOPs per token: {num_flops_per_token:e}")
+    print(f"Time budget: {TIME_BUDGET}s")
+    print(f"Gradient accumulation steps: {grad_accum_steps}")
 
-tokens_per_fwdbwd = DEVICE_BATCH_SIZE * MAX_SEQ_LEN
-# config-robustness: tolerate device_batch_size/seq_len that do not exactly divide
-# TOTAL_BATCH_SIZE (AIChilles sweeps these) instead of asserting and crashing.
-grad_accum_steps = max(1, round(TOTAL_BATCH_SIZE / tokens_per_fwdbwd))
-
-optimizer = model.setup_optimizer(
-    unembedding_lr=UNEMBEDDING_LR,
-    embedding_lr=EMBEDDING_LR,
-    scalar_lr=SCALAR_LR,
-    adam_betas=ADAM_BETAS,
-    matrix_lr=MATRIX_LR,
-    weight_decay=WEIGHT_DECAY,
-    ngram_ve_betas=NGRAM_VE_BETAS,
-    ngram_ve_lr_scale=NGRAM_VE_LR_SCALE,
-)
-
-muon_groups = []
-ngram_groups = []
-x0_warmdown_groups = []
-adam_groups = []
-adam_demon_groups = []
-muon_group_lrs = []
-x0_group_lrs = []
-adam_group_lrs = []
-for group in optimizer.param_groups:
-    if group["kind"] == "muon":
-        muon_groups.append(group)
-        muon_group_lrs.append((group, group["initial_lr"]))
-    elif group.get("is_ngram_ve", False):
-        ngram_groups.append(group)
-    elif group.get("is_x0_muon_warmdown", False):
-        x0_warmdown_groups.append(group)
-        x0_group_lrs.append((group, group["initial_lr"]))
-    else:
-        adam_groups.append(group)
-        adam_group_lrs.append((group, group["initial_lr"]))
-        if group.get("demon_beta1", False):
-            adam_demon_groups.append((group, group["betas"][1]))
-
-if os.environ.get("AICHILLES_EAGER") != "1":  # AICHILLES_EAGER=1 -> eager (skip compile) for fast search
-    model = torch.compile(model, dynamic=False, mode="max-autotune", fullgraph=True)
-
-train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
-x, y, epoch = next(train_loader)  # prefetch first batch
-
-print(f"Time budget: {TIME_BUDGET}s")
-print(f"Gradient accumulation steps: {grad_accum_steps}")
-
-# Schedules (all based on progress = training_time / TIME_BUDGET)
+    # Schedules (all based on progress = training_time / TIME_BUDGET)
 
 
-def get_lr_multiplier(progress, warmdown_ratio=WARMDOWN_RATIO):
-    if progress < WARMUP_RATIO:
-        return progress / WARMUP_RATIO if WARMUP_RATIO > 0 else 1.0
-    elif progress < 1.0 - warmdown_ratio:
-        return 1.0
-    else:
-        cooldown = (1.0 - progress) / warmdown_ratio
-        return cooldown * 1.0 + (1 - cooldown) * FINAL_LR_FRAC
+    def get_lr_multiplier(progress, warmdown_ratio=WARMDOWN_RATIO):
+        if progress < WARMUP_RATIO:
+            return progress / WARMUP_RATIO if WARMUP_RATIO > 0 else 1.0
+        elif progress < 1.0 - warmdown_ratio:
+            return 1.0
+        else:
+            cooldown = (1.0 - progress) / warmdown_ratio
+            return cooldown * 1.0 + (1 - cooldown) * FINAL_LR_FRAC
 
 
-MUON_PEAK_MOMENTUM = 0.95  # standard peak
-MUON_WARMDOWN_MOMENTUM = 0.79  # testing VE beta2 ramp alone
-# Reverse Demon for NorMuon beta2: INCREASE beta2 during warmdown for more stable variance normalization
-MUON_BETA2_PEAK = 0.95  # standard beta2 during full-LR phase
-MUON_BETA2_WARMDOWN = 0.97  # target beta2 at end of warmdown
-MUON_LR_BOOST = 1.0  # no LR boost
-# VE RMSProp reverse-Demon: increase VE beta2 during last 30% of Muon warmdown
-# Analogous to Muon's 0.95->0.97, but for ngram VE tables (0.999->0.9995)
-NGRAM_VE_BETA2_WARMDOWN = 0.9999  # STRONGER delayed VE beta2 ramp (0.999->0.9999 last 30% warmdown)
-def get_muon_momentum(step, progress=None):
-    # Warmup: 0.85 -> 0.95 over 300 steps
-    frac = min(step / 300, 1)
-    base = (1 - frac) * 0.85 + frac * MUON_PEAK_MOMENTUM
-    # Quadratic Demon: back-loaded shape keeps peak momentum longer
-    if progress is not None:
+    MUON_PEAK_MOMENTUM = 0.95  # standard peak
+    MUON_WARMDOWN_MOMENTUM = 0.79  # testing VE beta2 ramp alone
+    # Reverse Demon for NorMuon beta2: INCREASE beta2 during warmdown for more stable variance normalization
+    MUON_BETA2_PEAK = 0.95  # standard beta2 during full-LR phase
+    MUON_BETA2_WARMDOWN = 0.97  # target beta2 at end of warmdown
+    MUON_LR_BOOST = 1.0  # no LR boost
+    # VE RMSProp reverse-Demon: increase VE beta2 during last 30% of Muon warmdown
+    # Analogous to Muon's 0.95->0.97, but for ngram VE tables (0.999->0.9995)
+    NGRAM_VE_BETA2_WARMDOWN = 0.9999  # STRONGER delayed VE beta2 ramp (0.999->0.9999 last 30% warmdown)
+    def get_muon_momentum(step, progress=None):
+        # Warmup: 0.85 -> 0.95 over 300 steps
+        frac = min(step / 300, 1)
+        base = (1 - frac) * 0.85 + frac * MUON_PEAK_MOMENTUM
+        # Quadratic Demon: back-loaded shape keeps peak momentum longer
+        if progress is not None:
+            warmdown_start = 1.0 - WARMDOWN_RATIO
+            if progress > warmdown_start:
+                wd_frac = (progress - warmdown_start) / WARMDOWN_RATIO
+                base = MUON_PEAK_MOMENTUM + (wd_frac ** 2) * (MUON_WARMDOWN_MOMENTUM - MUON_PEAK_MOMENTUM)
+        return base
+
+
+    def get_muon_beta2(progress):
+        """Reverse beta2: increase beta2 during warmdown for more stable variance norm."""
         warmdown_start = 1.0 - WARMDOWN_RATIO
-        if progress > warmdown_start:
+        if progress < warmdown_start:
+            return MUON_BETA2_PEAK
+        else:
             wd_frac = (progress - warmdown_start) / WARMDOWN_RATIO
-            base = MUON_PEAK_MOMENTUM + (wd_frac ** 2) * (MUON_WARMDOWN_MOMENTUM - MUON_PEAK_MOMENTUM)
-    return base
+            return MUON_BETA2_PEAK + wd_frac * (MUON_BETA2_WARMDOWN - MUON_BETA2_PEAK)
 
 
-def get_muon_beta2(progress):
-    """Reverse beta2: increase beta2 during warmdown for more stable variance norm."""
-    warmdown_start = 1.0 - WARMDOWN_RATIO
-    if progress < warmdown_start:
-        return MUON_BETA2_PEAK
-    else:
-        wd_frac = (progress - warmdown_start) / WARMDOWN_RATIO
-        return MUON_BETA2_PEAK + wd_frac * (MUON_BETA2_WARMDOWN - MUON_BETA2_PEAK)
+    def get_muon_lr_boost(progress):
+        """Boost Muon LR during warmdown to compensate for higher beta2 reducing step size."""
+        warmdown_start = 1.0 - WARMDOWN_RATIO
+        if progress < warmdown_start:
+            return 1.0
+        else:
+            wd_frac = (progress - warmdown_start) / WARMDOWN_RATIO
+            return 1.0 + wd_frac * (MUON_LR_BOOST - 1.0)
 
 
-def get_muon_lr_boost(progress):
-    """Boost Muon LR during warmdown to compensate for higher beta2 reducing step size."""
-    warmdown_start = 1.0 - WARMDOWN_RATIO
-    if progress < warmdown_start:
-        return 1.0
-    else:
-        wd_frac = (progress - warmdown_start) / WARMDOWN_RATIO
-        return 1.0 + wd_frac * (MUON_LR_BOOST - 1.0)
+    def get_adam_beta1(progress, warmdown_ratio=ADAM_WARMDOWN_RATIO):
+        """Forward Demon: decrease beta1 during warmdown for more responsive gradient following."""
+        initial_beta1 = ADAM_BETAS[0]
+        final_beta1 = DEMON_FINAL_BETA1
+        warmdown_start = 1.0 - warmdown_ratio
+        if progress < warmdown_start:
+            return initial_beta1
+        else:
+            warmdown_progress = (progress - warmdown_start) / warmdown_ratio
+            return initial_beta1 + (final_beta1 - initial_beta1) * warmdown_progress
 
 
-def get_adam_beta1(progress, warmdown_ratio=ADAM_WARMDOWN_RATIO):
-    """Forward Demon: decrease beta1 during warmdown for more responsive gradient following."""
-    initial_beta1 = ADAM_BETAS[0]
-    final_beta1 = DEMON_FINAL_BETA1
-    warmdown_start = 1.0 - warmdown_ratio
-    if progress < warmdown_start:
-        return initial_beta1
-    else:
-        warmdown_progress = (progress - warmdown_start) / warmdown_ratio
-        return initial_beta1 + (final_beta1 - initial_beta1) * warmdown_progress
+    # WD pulse: RECTANGULAR shape -- with 95% warmdown (starts at 5%), pulses shifted earlier
+    # Main pulse at 3% center, 2% total duration (1% half-width): fires at 2-4%, before warmdown onset at 5%
+    # Early pulse at 1.5% center, 1% total duration: fires at 1-2% progress
+    # Both pulses fire in the full-LR phase (0-5%), maintaining the pre-warmdown regularization timing
+    WD_PULSE_CENTER = 0.03   # shift main pulse to 3% (fires before warmdown at 5%)
+    WD_PULSE_HALF_WIDTH = 0.01  # 1% half-width: 2% total duration (tighter for earlier firing)
+    WD_PULSE_MAGNITUDE = 5.0  # try 5x main pulse (vs 8x) -- 5x optimal WITH Muon Demon, 8x WITHOUT; current setup HAS Demon
+    WD_EARLY_PULSE_CENTER = 0.015  # shift early pulse to 1.5%
+    WD_EARLY_PULSE_HALF_WIDTH = 0.005  # 0.5% half-width: 1% total duration
+    WD_EARLY_PULSE_MAGNITUDE = 3.0  # 3x early pulse (gentler, to initialize regularization)
+    # Mid-warmdown triangular pulse: fires at 80% total progress (= ~79% through warmdown)
+    # This is WITHIN the VE beta2 ramp zone (which starts at 71.5% total = 70% through warmdown)
+    # Hypothesis: VE beta2 stabilization provides a safety net for a mid-warmdown WD perturbation
+    WD_MID_PULSE_CENTER = 0.80   # 80% total progress = ~79% through warmdown
+    WD_MID_PULSE_HALF_WIDTH = 0.025  # 2.5% half-width: 5% total triangular duration
+    WD_MID_PULSE_MAGNITUDE = 4.0  # 4x magnitude (triangular shape -- less harsh than rectangular)
 
-
-# WD pulse: RECTANGULAR shape -- with 95% warmdown (starts at 5%), pulses shifted earlier
-# Main pulse at 3% center, 2% total duration (1% half-width): fires at 2-4%, before warmdown onset at 5%
-# Early pulse at 1.5% center, 1% total duration: fires at 1-2% progress
-# Both pulses fire in the full-LR phase (0-5%), maintaining the pre-warmdown regularization timing
-WD_PULSE_CENTER = 0.03   # shift main pulse to 3% (fires before warmdown at 5%)
-WD_PULSE_HALF_WIDTH = 0.01  # 1% half-width: 2% total duration (tighter for earlier firing)
-WD_PULSE_MAGNITUDE = 5.0  # try 5x main pulse (vs 8x) -- 5x optimal WITH Muon Demon, 8x WITHOUT; current setup HAS Demon
-WD_EARLY_PULSE_CENTER = 0.015  # shift early pulse to 1.5%
-WD_EARLY_PULSE_HALF_WIDTH = 0.005  # 0.5% half-width: 1% total duration
-WD_EARLY_PULSE_MAGNITUDE = 3.0  # 3x early pulse (gentler, to initialize regularization)
-# Mid-warmdown triangular pulse: fires at 80% total progress (= ~79% through warmdown)
-# This is WITHIN the VE beta2 ramp zone (which starts at 71.5% total = 70% through warmdown)
-# Hypothesis: VE beta2 stabilization provides a safety net for a mid-warmdown WD perturbation
-WD_MID_PULSE_CENTER = 0.80   # 80% total progress = ~79% through warmdown
-WD_MID_PULSE_HALF_WIDTH = 0.025  # 2.5% half-width: 5% total triangular duration
-WD_MID_PULSE_MAGNITUDE = 4.0  # 4x magnitude (triangular shape -- less harsh than rectangular)
-
-def get_weight_decay(progress):
-    base_wd = WEIGHT_DECAY * (1 - progress)
-    # Early small pulse: 3x spike at 2% progress (step ~65), 2% total duration
-    early_dist = abs(progress - WD_EARLY_PULSE_CENTER)
-    if early_dist < WD_EARLY_PULSE_HALF_WIDTH:
-        return base_wd * WD_EARLY_PULSE_MAGNITUDE  # RECTANGULAR early pulse
-    # Main pulse: 8x rectangular spike at 5% progress (step ~163), 3% total duration
-    dist = abs(progress - WD_PULSE_CENTER)
-    if dist < WD_PULSE_HALF_WIDTH:
-        return base_wd * WD_PULSE_MAGNITUDE  # RECTANGULAR main pulse
-    # Mid-warmdown triangular pulse: fires within VE beta2 stabilization zone
-    mid_dist = abs(progress - WD_MID_PULSE_CENTER)
-    if mid_dist < WD_MID_PULSE_HALF_WIDTH:
-        # Triangular: linear ramp up then down (proven optimal shape)
-        local = (progress - (WD_MID_PULSE_CENTER - WD_MID_PULSE_HALF_WIDTH)) / (2 * WD_MID_PULSE_HALF_WIDTH)
-        bump = 2 * local if local < 0.5 else 2 * (1 - local)
-        return base_wd * (1.0 + bump * (WD_MID_PULSE_MAGNITUDE - 1.0))
-    return base_wd
-
-
-# ---------------------------------------------------------------------------
-# Training loop
-# ---------------------------------------------------------------------------
-
-t_start_training = time.time()
-smooth_train_loss = 0
-total_training_time = 0
-step = 0
-inv_time_budget = 1.0 / TIME_BUDGET
-inv_muon_warmdown = 1.0 / WARMDOWN_RATIO
-inv_adam_warmdown = 1.0 / ADAM_WARMDOWN_RATIO
-muon_warmdown_start = 1.0 - WARMDOWN_RATIO
-adam_warmdown_start = 1.0 - ADAM_WARMDOWN_RATIO
-
-while True:
-    torch.cuda.synchronize()
-    t0 = time.time()
-    for _micro_step in range(grad_accum_steps):
-        with autocast_ctx:
-            loss = model(x, y)
-        train_loss = loss.detach()
-        loss = loss / grad_accum_steps
-        loss.backward()
-        x, y, epoch = next(train_loader)
-
-    # Progress and schedules (decoupled warmdown: Muon=0.9, Adam=0.7, Ngram VE=0.0)
-    progress = min(total_training_time * inv_time_budget, 1.0)
-    if progress < muon_warmdown_start:
-        lrm_muon = 1.0
-        muon_wd_frac = 0.0
-    else:
-        muon_wd_frac = (progress - muon_warmdown_start) * inv_muon_warmdown
-        lrm_muon = ((1.0 - progress) * inv_muon_warmdown) * (1.0 - FINAL_LR_FRAC) + FINAL_LR_FRAC
-
-    if progress < adam_warmdown_start:
-        lrm_adam = 1.0
-        adam_beta1 = ADAM_BETAS[0]
-    else:
-        adam_wd_frac = (progress - adam_warmdown_start) * inv_adam_warmdown
-        lrm_adam = ((1.0 - progress) * inv_adam_warmdown) * (1.0 - FINAL_LR_FRAC) + FINAL_LR_FRAC
-        adam_beta1 = ADAM_BETAS[0] + (DEMON_FINAL_BETA1 - ADAM_BETAS[0]) * adam_wd_frac
-
-    frac = min(step / 300, 1)
-    muon_momentum = (1 - frac) * 0.85 + frac * MUON_PEAK_MOMENTUM
-    if progress > muon_warmdown_start:
-        muon_momentum = MUON_PEAK_MOMENTUM + (muon_wd_frac ** 2) * (MUON_WARMDOWN_MOMENTUM - MUON_PEAK_MOMENTUM)
-    muon_beta2 = MUON_BETA2_PEAK + muon_wd_frac * (MUON_BETA2_WARMDOWN - MUON_BETA2_PEAK)
-    muon_lr_boost = 1.0 + muon_wd_frac * (MUON_LR_BOOST - 1.0)
-    # VE RMSProp reverse-Demon: DELAYED ramp (only last 30% of Muon warmdown)
-    late_frac = max(0.0, (muon_wd_frac - 0.7) / 0.3)
-    ve_beta2 = NGRAM_VE_BETAS[1] + late_frac * (NGRAM_VE_BETA2_WARMDOWN - NGRAM_VE_BETAS[1])
-
-    base_wd = WEIGHT_DECAY * (1 - progress)
-    early_dist = abs(progress - WD_EARLY_PULSE_CENTER)
-    if early_dist < WD_EARLY_PULSE_HALF_WIDTH:
-        muon_weight_decay = base_wd * WD_EARLY_PULSE_MAGNITUDE
-    else:
+    def get_weight_decay(progress):
+        base_wd = WEIGHT_DECAY * (1 - progress)
+        # Early small pulse: 3x spike at 2% progress (step ~65), 2% total duration
+        early_dist = abs(progress - WD_EARLY_PULSE_CENTER)
+        if early_dist < WD_EARLY_PULSE_HALF_WIDTH:
+            return base_wd * WD_EARLY_PULSE_MAGNITUDE  # RECTANGULAR early pulse
+        # Main pulse: 8x rectangular spike at 5% progress (step ~163), 3% total duration
         dist = abs(progress - WD_PULSE_CENTER)
         if dist < WD_PULSE_HALF_WIDTH:
-            muon_weight_decay = base_wd * WD_PULSE_MAGNITUDE
+            return base_wd * WD_PULSE_MAGNITUDE  # RECTANGULAR main pulse
+        # Mid-warmdown triangular pulse: fires within VE beta2 stabilization zone
+        mid_dist = abs(progress - WD_MID_PULSE_CENTER)
+        if mid_dist < WD_MID_PULSE_HALF_WIDTH:
+            # Triangular: linear ramp up then down (proven optimal shape)
+            local = (progress - (WD_MID_PULSE_CENTER - WD_MID_PULSE_HALF_WIDTH)) / (2 * WD_MID_PULSE_HALF_WIDTH)
+            bump = 2 * local if local < 0.5 else 2 * (1 - local)
+            return base_wd * (1.0 + bump * (WD_MID_PULSE_MAGNITUDE - 1.0))
+        return base_wd
+
+
+    # ---------------------------------------------------------------------------
+    # Training loop
+    # ---------------------------------------------------------------------------
+
+    t_start_training = time.time()
+    smooth_train_loss = 0
+    total_training_time = 0
+    step = 0
+    inv_time_budget = 1.0 / TIME_BUDGET
+    inv_muon_warmdown = 1.0 / WARMDOWN_RATIO
+    inv_adam_warmdown = 1.0 / ADAM_WARMDOWN_RATIO
+    muon_warmdown_start = 1.0 - WARMDOWN_RATIO
+    adam_warmdown_start = 1.0 - ADAM_WARMDOWN_RATIO
+
+    while True:
+        torch.cuda.synchronize()
+        t0 = time.time()
+        for _micro_step in range(grad_accum_steps):
+            with autocast_ctx:
+                loss = model(x, y)
+            train_loss = loss.detach()
+            loss = loss / grad_accum_steps
+            loss.backward()
+            x, y, epoch = next(train_loader)
+
+        # Progress and schedules (decoupled warmdown: Muon=0.9, Adam=0.7, Ngram VE=0.0)
+        progress = min(total_training_time * inv_time_budget, 1.0)
+        if progress < muon_warmdown_start:
+            lrm_muon = 1.0
+            muon_wd_frac = 0.0
         else:
-            mid_dist = abs(progress - WD_MID_PULSE_CENTER)
-            if mid_dist < WD_MID_PULSE_HALF_WIDTH:
-                local = (progress - (WD_MID_PULSE_CENTER - WD_MID_PULSE_HALF_WIDTH)) / (2 * WD_MID_PULSE_HALF_WIDTH)
-                bump = 2 * local if local < 0.5 else 2 * (1 - local)
-                muon_weight_decay = base_wd * (1.0 + bump * (WD_MID_PULSE_MAGNITUDE - 1.0))
+            muon_wd_frac = (progress - muon_warmdown_start) * inv_muon_warmdown
+            lrm_muon = ((1.0 - progress) * inv_muon_warmdown) * (1.0 - FINAL_LR_FRAC) + FINAL_LR_FRAC
+
+        if progress < adam_warmdown_start:
+            lrm_adam = 1.0
+            adam_beta1 = ADAM_BETAS[0]
+        else:
+            adam_wd_frac = (progress - adam_warmdown_start) * inv_adam_warmdown
+            lrm_adam = ((1.0 - progress) * inv_adam_warmdown) * (1.0 - FINAL_LR_FRAC) + FINAL_LR_FRAC
+            adam_beta1 = ADAM_BETAS[0] + (DEMON_FINAL_BETA1 - ADAM_BETAS[0]) * adam_wd_frac
+
+        frac = min(step / 300, 1)
+        muon_momentum = (1 - frac) * 0.85 + frac * MUON_PEAK_MOMENTUM
+        if progress > muon_warmdown_start:
+            muon_momentum = MUON_PEAK_MOMENTUM + (muon_wd_frac ** 2) * (MUON_WARMDOWN_MOMENTUM - MUON_PEAK_MOMENTUM)
+        muon_beta2 = MUON_BETA2_PEAK + muon_wd_frac * (MUON_BETA2_WARMDOWN - MUON_BETA2_PEAK)
+        muon_lr_boost = 1.0 + muon_wd_frac * (MUON_LR_BOOST - 1.0)
+        # VE RMSProp reverse-Demon: DELAYED ramp (only last 30% of Muon warmdown)
+        late_frac = max(0.0, (muon_wd_frac - 0.7) / 0.3)
+        ve_beta2 = NGRAM_VE_BETAS[1] + late_frac * (NGRAM_VE_BETA2_WARMDOWN - NGRAM_VE_BETAS[1])
+
+        base_wd = WEIGHT_DECAY * (1 - progress)
+        early_dist = abs(progress - WD_EARLY_PULSE_CENTER)
+        if early_dist < WD_EARLY_PULSE_HALF_WIDTH:
+            muon_weight_decay = base_wd * WD_EARLY_PULSE_MAGNITUDE
+        else:
+            dist = abs(progress - WD_PULSE_CENTER)
+            if dist < WD_PULSE_HALF_WIDTH:
+                muon_weight_decay = base_wd * WD_PULSE_MAGNITUDE
             else:
-                muon_weight_decay = base_wd
+                mid_dist = abs(progress - WD_MID_PULSE_CENTER)
+                if mid_dist < WD_MID_PULSE_HALF_WIDTH:
+                    local = (progress - (WD_MID_PULSE_CENTER - WD_MID_PULSE_HALF_WIDTH)) / (2 * WD_MID_PULSE_HALF_WIDTH)
+                    bump = 2 * local if local < 0.5 else 2 * (1 - local)
+                    muon_weight_decay = base_wd * (1.0 + bump * (WD_MID_PULSE_MAGNITUDE - 1.0))
+                else:
+                    muon_weight_decay = base_wd
 
-    muon_lr = lrm_muon * muon_lr_boost
-    if progress < muon_warmdown_start:
-        for group in muon_groups:
-            group["momentum"] = muon_momentum
-            group["weight_decay"] = muon_weight_decay
-            group["beta2"] = muon_beta2
-    else:
-        for group, initial_lr in muon_group_lrs:
-            group["lr"] = initial_lr * muon_lr
-            group["momentum"] = muon_momentum
-            group["weight_decay"] = muon_weight_decay
-            group["beta2"] = muon_beta2
-        for group, initial_lr in x0_group_lrs:
-            group["lr"] = initial_lr * lrm_muon
-    if progress >= adam_warmdown_start:
-        for group, initial_lr in adam_group_lrs:
-            group["lr"] = initial_lr * lrm_adam
-        for group, beta2 in adam_demon_groups:
-            group["betas"] = (adam_beta1, beta2)
-    # Update ngram VE RMSProp beta2 during warmdown (delayed reverse-Demon for sparse tables)
-    if progress >= muon_warmdown_start and late_frac > 0.0:
-        for group in ngram_groups:
-            group["beta2"] = ve_beta2
-    optimizer.step()
-    model.zero_grad(set_to_none=True)
+        muon_lr = lrm_muon * muon_lr_boost
+        if progress < muon_warmdown_start:
+            for group in muon_groups:
+                group["momentum"] = muon_momentum
+                group["weight_decay"] = muon_weight_decay
+                group["beta2"] = muon_beta2
+        else:
+            for group, initial_lr in muon_group_lrs:
+                group["lr"] = initial_lr * muon_lr
+                group["momentum"] = muon_momentum
+                group["weight_decay"] = muon_weight_decay
+                group["beta2"] = muon_beta2
+            for group, initial_lr in x0_group_lrs:
+                group["lr"] = initial_lr * lrm_muon
+        if progress >= adam_warmdown_start:
+            for group, initial_lr in adam_group_lrs:
+                group["lr"] = initial_lr * lrm_adam
+            for group, beta2 in adam_demon_groups:
+                group["betas"] = (adam_beta1, beta2)
+        # Update ngram VE RMSProp beta2 during warmdown (delayed reverse-Demon for sparse tables)
+        if progress >= muon_warmdown_start and late_frac > 0.0:
+            for group in ngram_groups:
+                group["beta2"] = ve_beta2
+        optimizer.step()
+        model.zero_grad(set_to_none=True)
 
-    train_loss_f = train_loss.item()
+        train_loss_f = train_loss.item()
 
-    # Fast fail: abort if loss is exploding or NaN
-    if math.isnan(train_loss_f) or train_loss_f > 100:
-        print("FAIL")
-        exit(1)
+        # Fast fail: abort if loss is exploding or NaN
+        if math.isnan(train_loss_f) or train_loss_f > 100:
+            print("FAIL")
+            exit(1)
 
-    torch.cuda.synchronize()
-    t1 = time.time()
-    dt = t1 - t0
+        torch.cuda.synchronize()
+        t1 = time.time()
+        dt = t1 - t0
 
-    if step > 10:
-        total_training_time += dt
+        if step > 10:
+            total_training_time += dt
 
-    # Logging
-    ema_beta = 0.9
-    smooth_train_loss = ema_beta * smooth_train_loss + (1 - ema_beta) * train_loss_f
-    debiased_smooth_loss = smooth_train_loss / (1 - ema_beta ** (step + 1))
-    pct_done = 100 * progress
-    tok_per_sec = int(TOTAL_BATCH_SIZE / dt)
-    mfu = 100 * num_flops_per_token * TOTAL_BATCH_SIZE / dt / B200_BF16_PEAK_FLOPS
-    remaining = max(0, TIME_BUDGET - total_training_time)
+        # Logging
+        ema_beta = 0.9
+        smooth_train_loss = ema_beta * smooth_train_loss + (1 - ema_beta) * train_loss_f
+        debiased_smooth_loss = smooth_train_loss / (1 - ema_beta ** (step + 1))
+        pct_done = 100 * progress
+        tok_per_sec = int(TOTAL_BATCH_SIZE / dt)
+        mfu = 100 * num_flops_per_token * TOTAL_BATCH_SIZE / dt / B200_BF16_PEAK_FLOPS
+        remaining = max(0, TIME_BUDGET - total_training_time)
 
-    print(
-        f"\rstep {step:05d} ({pct_done:.1f}%) | loss: {debiased_smooth_loss:.6f} | lrm_muon: {lrm_muon:.2f} lrm_adam: {lrm_adam:.2f} | dt: {dt * 1000:.0f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.1f}% | epoch: {epoch} | remaining: {remaining:.0f}s    ",
-        end="",
-        flush=True,
+        print(
+            f"\rstep {step:05d} ({pct_done:.1f}%) | loss: {debiased_smooth_loss:.6f} | lrm_muon: {lrm_muon:.2f} lrm_adam: {lrm_adam:.2f} | dt: {dt * 1000:.0f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.1f}% | epoch: {epoch} | remaining: {remaining:.0f}s    ",
+            end="",
+            flush=True,
+        )
+
+        # GC management (Python's GC causes ~500ms stalls)
+        if step == 0:
+            gc.collect()
+            gc.freeze()
+            gc.disable()
+        elif (step + 1) % 5000 == 0:
+            gc.collect()
+
+        step += 1
+
+        # Time's up — but only stop after warmup steps so we don't count compilation
+        if step > 10 and total_training_time >= TIME_BUDGET:
+            break
+
+    print()  # newline after \r training log
+
+    total_tokens = step * TOTAL_BATCH_SIZE
+
+    # Final eval
+    model.eval()
+    with autocast_ctx:
+        val_bpb = evaluate_bpb(model, tokenizer, DEVICE_BATCH_SIZE)
+
+    # Final summary
+    t_end = time.time()
+    startup_time = t_start_training - t_start
+    steady_state_mfu = (
+        100
+        * num_flops_per_token
+        * TOTAL_BATCH_SIZE
+        * (step - 10)
+        / total_training_time
+        / B200_BF16_PEAK_FLOPS
+        if total_training_time > 0
+        else 0
     )
+    peak_vram_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
 
-    # GC management (Python's GC causes ~500ms stalls)
-    if step == 0:
-        gc.collect()
-        gc.freeze()
-        gc.disable()
-    elif (step + 1) % 5000 == 0:
-        gc.collect()
+    print("---")
+    print(f"val_bpb:          {val_bpb:.6f}")
+    print(f"training_seconds: {total_training_time:.1f}")
+    print(f"total_seconds:    {t_end - t_start:.1f}")
+    print(f"peak_vram_mb:     {peak_vram_mb:.1f}")
+    print(f"mfu_percent:      {steady_state_mfu:.2f}")
+    print(f"total_tokens_M:   {total_tokens / 1e6:.1f}")
+    print(f"num_steps:        {step}")
+    print(f"num_params_M:     {num_params / 1e6:.1f}")
+    print(f"depth:            {DEPTH}")
 
-    step += 1
 
-    # Time's up — but only stop after warmup steps so we don't count compilation
-    if step > 10 and total_training_time >= TIME_BUDGET:
-        break
 
-print()  # newline after \r training log
 
-total_tokens = step * TOTAL_BATCH_SIZE
-
-# Final eval
-model.eval()
-with autocast_ctx:
-    val_bpb = evaluate_bpb(model, tokenizer, DEVICE_BATCH_SIZE)
-
-# Final summary
-t_end = time.time()
-startup_time = t_start_training - t_start
-steady_state_mfu = (
-    100
-    * num_flops_per_token
-    * TOTAL_BATCH_SIZE
-    * (step - 10)
-    / total_training_time
-    / B200_BF16_PEAK_FLOPS
-    if total_training_time > 0
-    else 0
-)
-peak_vram_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
-
-print("---")
-print(f"val_bpb:          {val_bpb:.6f}")
-print(f"training_seconds: {total_training_time:.1f}")
-print(f"total_seconds:    {t_end - t_start:.1f}")
-print(f"peak_vram_mb:     {peak_vram_mb:.1f}")
-print(f"mfu_percent:      {steady_state_mfu:.2f}")
-print(f"total_tokens_M:   {total_tokens / 1e6:.1f}")
-print(f"num_steps:        {step}")
-print(f"num_params_M:     {num_params / 1e6:.1f}")
-print(f"depth:            {DEPTH}")

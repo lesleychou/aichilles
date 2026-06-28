@@ -22,74 +22,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-cap = torch.cuda.get_device_capability()
-
-if cap[0] >= 10:
-    # Blackwell (B200, SM100): wrap flash-attn-4 as a custom op so torch.compile
-    # treats it as opaque (no tracing into cutlass DSL, no recompile-cache thrash,
-    # no per-call Python kernel build).
-    from flash_attn.cute import flash_attn_func as _fa4_raw
-    from flash_attn.cute.interface import _flash_attn_bwd as _fa4_bwd_raw
-
-    @torch.library.custom_op("fa4::fa4_causal", mutates_args=())
-    def _fa4_causal_op(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
-                       window_left: int) -> tuple[torch.Tensor, torch.Tensor]:
-        ws = (window_left, 0) if window_left > 0 else (None, None)
-        out, lse = _fa4_raw(q, k, v, causal=True, window_size=ws, return_lse=True)
-        return out, lse
-
-    @_fa4_causal_op.register_fake
-    def _fa4_causal_fake(q, k, v, window_left):
-        B, T, H, D = q.shape
-        return torch.empty_like(q), torch.empty(B, H, T, device=q.device, dtype=torch.float32)
-
-    def _fa4_setup_context(ctx, inputs, output):
-        q, k, v, window_left = inputs
-        out, lse = output
-        ctx.save_for_backward(q, k, v, out, lse)
-        ctx.window_left = window_left
-
-    @torch.library.custom_op("fa4::fa4_bwd", mutates_args=())
-    def _fa4_bwd_op(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
-                    out: torch.Tensor, grad_output: torch.Tensor, lse: torch.Tensor,
-                    window_left: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        wl = window_left if window_left > 0 else None
-        dq, dk, dv = _fa4_bwd_raw(
-            q, k, v, out, grad_output, lse,
-            causal=True, window_size_left=wl, window_size_right=0,
-        )
-        return dq, dk, dv
-
-    @_fa4_bwd_op.register_fake
-    def _fa4_bwd_fake(q, k, v, out, grad_output, lse, window_left):
-        return torch.empty_like(q), torch.empty_like(k), torch.empty_like(v)
-
-    def _fa4_backward(ctx, grad_output, grad_lse):
-        q, k, v, out, lse = ctx.saved_tensors
-        dq, dk, dv = torch.ops.fa4.fa4_bwd(q, k, v, out, grad_output, lse, ctx.window_left)
-        return dq, dk, dv, None
-
-    _fa4_causal_op.register_autograd(_fa4_backward, setup_context=_fa4_setup_context)
-
-    def flash_attn_func(q, k, v, causal=True, window_size=(-1, -1)):
-        wl = window_size[0] if isinstance(window_size, tuple) else window_size
-        if wl is None or wl <= 0 or wl >= q.shape[1]:
-            wl = -1
-        out, _lse = torch.ops.fa4.fa4_causal(q, k, v, wl)
-        return out
-
-    class _FA4Shim:
-        flash_attn_func = staticmethod(flash_attn_func)
-
-    fa3 = _FA4Shim()
-    print(f"Using flash-attn-4 as custom op (GPU capability {cap})")
-else:
-    # Hopper/Ampere (H100, A100): use flash-attn-3 via kernels package
-    from kernels import get_kernel
-
-    repo = "varunneal/flash-attention-3" if cap == (9, 0) else "kernels-community/flash-attn3"
-    fa3 = get_kernel(repo).flash_attn_interface
-    print(f"Using flash-attn-3 from {repo} (GPU capability {cap})")
+# NOTE: flash-attn-4 custom-op block removed (dead code: the SDPA override
+#       below replaces flash_attn_func, and FA4 is broken on this stack).
+#       Removing it also keeps this module's IMPORT cheap (no CUDA init),
+#       which matters because AIChilles imports it on every oracle call.
 
 from lib import MAX_SEQ_LEN, TIME_BUDGET, Tokenizer, evaluate_bpb, make_dataloader  # noqa: E402
 
@@ -1016,384 +952,390 @@ SWA_DECAY = 0.98
 # Setup
 # ---------------------------------------------------------------------------
 
-t_start = time.time()
-_SEED = int(os.environ.get("SEED", 42))
-torch.manual_seed(_SEED)
-torch.cuda.manual_seed(_SEED)
-torch.set_float32_matmul_precision("high")
-device = torch.device("cuda")
-autocast_ctx = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
-B200_BF16_PEAK_FLOPS = 2.25e15
 
-tokenizer = Tokenizer.from_directory()
-vocab_size = tokenizer.get_vocab_size()
-print(f"Vocab size: {vocab_size:,}")
 
-BIGRAM_TABLE_SIZE = 1048576  # 1M entries for minimal collisions
-NGRAM_ORDERS = 3  # bigram + trigram
-NGRAM_NARROW_DIM = 192  # Factored: 1M x 192 -> 192 x 768 per order
+# --- Train block: runs ONLY as a subprocess (AICHILLES_RUN=1) or `python <file>`.
+#     Imported (by the AIChilles harness / Agent 3) it is skipped, so import is
+#     side-effect free: no tokenizer load, no model build, no training. ---
+if __name__ == "__main__" or os.environ.get("AICHILLES_RUN") == "1":
+    t_start = time.time()
+    _SEED = int(os.environ.get("SEED", 42))
+    torch.manual_seed(_SEED)
+    torch.cuda.manual_seed(_SEED)
+    torch.set_float32_matmul_precision("high")
+    device = torch.device("cuda")
+    autocast_ctx = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
+    B200_BF16_PEAK_FLOPS = 2.25e15
 
-model = HourglassGPT(
-    vocab_size=vocab_size,
-    full_dim=FULL_DIM,
-    narrow_dim=NARROW_DIM,
-    head_dim=HEAD_DIM,
-    n_input_layers=N_INPUT_LAYERS,
-    n_middle_layers=N_MIDDLE_LAYERS,
-    n_output_layers=N_OUTPUT_LAYERS,
-    n_local_layers=N_LOCAL_LAYERS,
-    window_size=WINDOW_SIZE,
-    seq_len=MAX_SEQ_LEN,
-    mid_attn_positions=MID_ATTN_POSITIONS,
-    narrow_head_dim=NARROW_HEAD_DIM,
-    narrow_window_size=NARROW_WINDOW_SIZE,
-    narrow_mlp_expansion=NARROW_MLP_EXPANSION,
-    rope_base_local=ROPE_BASE_LOCAL,
-    rope_base_global=ROPE_BASE_GLOBAL,
-    bigram_table_size=BIGRAM_TABLE_SIZE,
-    ngram_orders=NGRAM_ORDERS,
-    ngram_narrow_dim=NGRAM_NARROW_DIM,
-    tokenizer_enc=tokenizer.enc,
-    n_div_corrections=N_DIV_CORRECTIONS,
-    div_rank=DIV_RANK,
-    output_mlp_hidden_dim=OUTPUT_MLP_HIDDEN,
-    n_output_routes=N_OUTPUT_ROUTES,
-    output_route_rank=OUTPUT_ROUTE_RANK,
-).to(device)
+    tokenizer = Tokenizer.from_directory()
+    vocab_size = tokenizer.get_vocab_size()
+    print(f"Vocab size: {vocab_size:,}")
 
-param_counts = model.num_scaling_params()
-print("Parameter counts:")
-for key, value in param_counts.items():
-    print(f"  {key:24s}: {value:,}")
-num_params = param_counts["total"]
-num_flops_per_token = model.estimate_flops()
-print(f"Estimated FLOPs per token: {num_flops_per_token:e}")
-print(f"Architecture: {N_INPUT_LAYERS}x{FULL_DIM} + {N_MIDDLE_LAYERS}x{NARROW_DIM} + {N_OUTPUT_LAYERS}x{FULL_DIM}")
+    BIGRAM_TABLE_SIZE = 1048576  # 1M entries for minimal collisions
+    NGRAM_ORDERS = 3  # bigram + trigram
+    NGRAM_NARROW_DIM = 192  # Factored: 1M x 192 -> 192 x 768 per order
 
-tokens_per_fwdbwd = DEVICE_BATCH_SIZE * MAX_SEQ_LEN
-grad_accum_steps = EARLY_GRAD_ACCUM  # Starts at 1, may increase
+    model = HourglassGPT(
+        vocab_size=vocab_size,
+        full_dim=FULL_DIM,
+        narrow_dim=NARROW_DIM,
+        head_dim=HEAD_DIM,
+        n_input_layers=N_INPUT_LAYERS,
+        n_middle_layers=N_MIDDLE_LAYERS,
+        n_output_layers=N_OUTPUT_LAYERS,
+        n_local_layers=N_LOCAL_LAYERS,
+        window_size=WINDOW_SIZE,
+        seq_len=MAX_SEQ_LEN,
+        mid_attn_positions=MID_ATTN_POSITIONS,
+        narrow_head_dim=NARROW_HEAD_DIM,
+        narrow_window_size=NARROW_WINDOW_SIZE,
+        narrow_mlp_expansion=NARROW_MLP_EXPANSION,
+        rope_base_local=ROPE_BASE_LOCAL,
+        rope_base_global=ROPE_BASE_GLOBAL,
+        bigram_table_size=BIGRAM_TABLE_SIZE,
+        ngram_orders=NGRAM_ORDERS,
+        ngram_narrow_dim=NGRAM_NARROW_DIM,
+        tokenizer_enc=tokenizer.enc,
+        n_div_corrections=N_DIV_CORRECTIONS,
+        div_rank=DIV_RANK,
+        output_mlp_hidden_dim=OUTPUT_MLP_HIDDEN,
+        n_output_routes=N_OUTPUT_ROUTES,
+        output_route_rank=OUTPUT_ROUTE_RANK,
+    ).to(device)
 
-# Depth-aware Muon + Adam for embeddings
-# Separate hash table params for decoupled warmdown
-muon_param_groups = []
-adam_params = []
-hash_table_params = []
-seen_data_ptrs = set()
+    param_counts = model.num_scaling_params()
+    print("Parameter counts:")
+    for key, value in param_counts.items():
+        print(f"  {key:24s}: {value:,}")
+    num_params = param_counts["total"]
+    num_flops_per_token = model.estimate_flops()
+    print(f"Estimated FLOPs per token: {num_flops_per_token:e}")
+    print(f"Architecture: {N_INPUT_LAYERS}x{FULL_DIM} + {N_MIDDLE_LAYERS}x{NARROW_DIM} + {N_OUTPUT_LAYERS}x{FULL_DIM}")
 
-# Collect all named parameters and assign them
-all_layer_params = {}  # layer_idx -> [params]
-proj_params = []  # down/up projection params
+    tokens_per_fwdbwd = DEVICE_BATCH_SIZE * MAX_SEQ_LEN
+    grad_accum_steps = EARLY_GRAD_ACCUM  # Starts at 1, may increase
 
-for name, p in model.named_parameters():
-    dp = p.data_ptr()
-    if dp in seen_data_ptrs:
-        continue
-    seen_data_ptrs.add(dp)
+    # Depth-aware Muon + Adam for embeddings
+    # Separate hash table params for decoupled warmdown
+    muon_param_groups = []
+    adam_params = []
+    hash_table_params = []
+    seen_data_ptrs = set()
 
-    # Hash table embedding weights -> dedicated Adam group
-    if p.ndim >= 2 and ("ngram_embed.embed_" in name or "byte_embed.embed" in name or "byte_boundary.embed" in name):
-        hash_table_params.append(p)
-        continue
+    # Collect all named parameters and assign them
+    all_layer_params = {}  # layer_idx -> [params]
+    proj_params = []  # down/up projection params
 
-    if p.ndim >= 2 and "wte" not in name and "lm_head" not in name and "ngram_embed" not in name and "byte_embed" not in name and "byte_boundary" not in name and "embed_mixer" not in name and "ssm_light" not in name and "ctx_norm" not in name:
-        if "vres_proj" in name:
-            proj_params.append(p)
+    for name, p in model.named_parameters():
+        dp = p.data_ptr()
+        if dp in seen_data_ptrs:
             continue
-        if "down_proj" in name or "up_proj" in name:
-            proj_params.append(p)
+        seen_data_ptrs.add(dp)
+
+        # Hash table embedding weights -> dedicated Adam group
+        if p.ndim >= 2 and ("ngram_embed.embed_" in name or "byte_embed.embed" in name or "byte_boundary.embed" in name):
+            hash_table_params.append(p)
             continue
-        # Find layer index
-        layer_idx = None
-        for stage_name, offset in [("input_layers", 0),
-                                    ("middle_layers", N_INPUT_LAYERS),
-                                    ("output_layers", N_INPUT_LAYERS + N_MIDDLE_LAYERS)]:
-            if stage_name in name:
-                for i in range(20):
-                    if f"{stage_name}.{i}." in name:
-                        layer_idx = offset + i
-                        break
-                break
-        if layer_idx is not None:
-            if layer_idx not in all_layer_params:
-                all_layer_params[layer_idx] = []
-            all_layer_params[layer_idx].append(p)
+
+        if p.ndim >= 2 and "wte" not in name and "lm_head" not in name and "ngram_embed" not in name and "byte_embed" not in name and "byte_boundary" not in name and "embed_mixer" not in name and "ssm_light" not in name and "ctx_norm" not in name:
+            if "vres_proj" in name:
+                proj_params.append(p)
+                continue
+            if "down_proj" in name or "up_proj" in name:
+                proj_params.append(p)
+                continue
+            # Find layer index
+            layer_idx = None
+            for stage_name, offset in [("input_layers", 0),
+                                        ("middle_layers", N_INPUT_LAYERS),
+                                        ("output_layers", N_INPUT_LAYERS + N_MIDDLE_LAYERS)]:
+                if stage_name in name:
+                    for i in range(20):
+                        if f"{stage_name}.{i}." in name:
+                            layer_idx = offset + i
+                            break
+                    break
+            if layer_idx is not None:
+                if layer_idx not in all_layer_params:
+                    all_layer_params[layer_idx] = []
+                all_layer_params[layer_idx].append(p)
+            else:
+                adam_params.append(p)
         else:
             adam_params.append(p)
-    else:
-        adam_params.append(p)
 
-for layer_idx in sorted(all_layer_params.keys()):
-    if not all_layer_params[layer_idx]:
-        continue
-    depth_frac = layer_idx / max(TOTAL_LAYERS - 1, 1)
-    lr_mult = DEPTH_LR_BASE + (DEPTH_LR_TOP - DEPTH_LR_BASE) * depth_frac
-    mom = DEPTH_MOM_BASE + (DEPTH_MOM_TOP - DEPTH_MOM_BASE) * depth_frac
-    muon_param_groups.append({
-        "params": all_layer_params[layer_idx],
-        "lr": MUON_LR * lr_mult,
-        "momentum": mom,
-        "ns_steps": 5,
-        "lr_mult": lr_mult,
-        "weight_decay": 0.005,
-        "layer_idx": layer_idx,  # for gradient-informed skip
-    })
+    for layer_idx in sorted(all_layer_params.keys()):
+        if not all_layer_params[layer_idx]:
+            continue
+        depth_frac = layer_idx / max(TOTAL_LAYERS - 1, 1)
+        lr_mult = DEPTH_LR_BASE + (DEPTH_LR_TOP - DEPTH_LR_BASE) * depth_frac
+        mom = DEPTH_MOM_BASE + (DEPTH_MOM_TOP - DEPTH_MOM_BASE) * depth_frac
+        muon_param_groups.append({
+            "params": all_layer_params[layer_idx],
+            "lr": MUON_LR * lr_mult,
+            "momentum": mom,
+            "ns_steps": 5,
+            "lr_mult": lr_mult,
+            "weight_decay": 0.005,
+            "layer_idx": layer_idx,  # for gradient-informed skip
+        })
 
-# Projection params (vres, down, up) get base Muon
-if proj_params:
-    muon_param_groups.append({
-        "params": proj_params,
-        "lr": MUON_LR,
-        "momentum": MUON_MOMENTUM,
-        "ns_steps": 5,
-        "lr_mult": 1.0,
-        "weight_decay": 0.005,
-    })
+    # Projection params (vres, down, up) get base Muon
+    if proj_params:
+        muon_param_groups.append({
+            "params": proj_params,
+            "lr": MUON_LR,
+            "momentum": MUON_MOMENTUM,
+            "ns_steps": 5,
+            "lr_mult": 1.0,
+            "weight_decay": 0.005,
+        })
 
-total_muon = sum(sum(p.numel() for p in g["params"]) for g in muon_param_groups)
-print(f"Muon params: {total_muon:,} ({len(muon_param_groups)} groups)")
-print(f"Adam params (default): {sum(p.numel() for p in adam_params):,}")
-print(f"Adam params (hash tables): {sum(p.numel() for p in hash_table_params):,}")
+    total_muon = sum(sum(p.numel() for p in g["params"]) for g in muon_param_groups)
+    print(f"Muon params: {total_muon:,} ({len(muon_param_groups)} groups)")
+    print(f"Adam params (default): {sum(p.numel() for p in adam_params):,}")
+    print(f"Adam params (hash tables): {sum(p.numel() for p in hash_table_params):,}")
 
-muon_optimizer = Muon(muon_param_groups, lr=MUON_LR, momentum=MUON_MOMENTUM)
+    muon_optimizer = Muon(muon_param_groups, lr=MUON_LR, momentum=MUON_MOMENTUM)
 
-# Decoupled warmdown -- hash tables get shorter warmdown
-HASH_WARMDOWN = 0.08
-HASH_FINAL_LR_FRAC = 0.05  # Same as default
-adam_base_lrs = [ADAM_LR, ADAM_LR]
-adam_warmdowns = [ADAM_WARMDOWN, HASH_WARMDOWN]
-adam_optimizer = torch.optim.AdamW([
-    {"params": adam_params, "lr": ADAM_LR, "betas": (ADAM_BETA1, ADAM_BETA2), "weight_decay": ADAM_WD},
-    {"params": hash_table_params, "lr": ADAM_LR, "betas": (ADAM_BETA1, ADAM_BETA2), "weight_decay": 0.0},
-])
+    # Decoupled warmdown -- hash tables get shorter warmdown
+    HASH_WARMDOWN = 0.08
+    HASH_FINAL_LR_FRAC = 0.05  # Same as default
+    adam_base_lrs = [ADAM_LR, ADAM_LR]
+    adam_warmdowns = [ADAM_WARMDOWN, HASH_WARMDOWN]
+    adam_optimizer = torch.optim.AdamW([
+        {"params": adam_params, "lr": ADAM_LR, "betas": (ADAM_BETA1, ADAM_BETA2), "weight_decay": ADAM_WD},
+        {"params": hash_table_params, "lr": ADAM_LR, "betas": (ADAM_BETA1, ADAM_BETA2), "weight_decay": 0.0},
+    ])
 
-# ---------------------------------------------------------------------------
-# Gradient-informed layer activity schedule
-# Per-layer LR multiplier that changes with training progress
-# Based on gradient distribution: lower layers converge first, output layers last
-# ---------------------------------------------------------------------------
-LAYER_ACTIVITY = {
-    0: (1.0, 0.5),   # Input: dampened late (converges first)
-    1: (1.0, 0.85),  # Middle: slight dampen
-    2: (1.0, 0.9),   # Middle: near-full
-    3: (1.0, 0.95),  # Middle: near-full
-    4: (0.95, 1.3),  # Output: amplified late
-    5: (0.9, 1.4),   # Output: strongly amplified late
-}
-ACTIVITY_START = 0.10  # Start differentiating after warmup
+    # ---------------------------------------------------------------------------
+    # Gradient-informed layer activity schedule
+    # Per-layer LR multiplier that changes with training progress
+    # Based on gradient distribution: lower layers converge first, output layers last
+    # ---------------------------------------------------------------------------
+    LAYER_ACTIVITY = {
+        0: (1.0, 0.5),   # Input: dampened late (converges first)
+        1: (1.0, 0.85),  # Middle: slight dampen
+        2: (1.0, 0.9),   # Middle: near-full
+        3: (1.0, 0.95),  # Middle: near-full
+        4: (0.95, 1.3),  # Output: amplified late
+        5: (0.9, 1.4),   # Output: strongly amplified late
+    }
+    ACTIVITY_START = 0.10  # Start differentiating after warmup
 
-layer_to_muon_group = {}
-for gi, group in enumerate(muon_optimizer.param_groups):
-    if "layer_idx" in group:
-        layer_to_muon_group[group["layer_idx"]] = gi
-print(f"Activity schedule for {len(layer_to_muon_group)} layers")
+    layer_to_muon_group = {}
+    for gi, group in enumerate(muon_optimizer.param_groups):
+        if "layer_idx" in group:
+            layer_to_muon_group[group["layer_idx"]] = gi
+    print(f"Activity schedule for {len(layer_to_muon_group)} layers")
 
-if os.environ.get("AICHILLES_EAGER") != "1":  # AICHILLES_EAGER=1 -> eager (skip compile)
-    model = torch.compile(model, dynamic=False)
+    if os.environ.get("AICHILLES_EAGER") != "1":  # AICHILLES_EAGER=1 -> eager (skip compile)
+        model = torch.compile(model, dynamic=False)
 
-train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
-current_grad_accum = EARLY_GRAD_ACCUM
-current_total_batch = TOTAL_BATCH_SIZE_EARLY
-x, y, epoch = next(train_loader)
+    train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
+    current_grad_accum = EARLY_GRAD_ACCUM
+    current_total_batch = TOTAL_BATCH_SIZE_EARLY
+    x, y, epoch = next(train_loader)
 
-print(f"Time budget: {TIME_BUDGET}s")
-print(f"Gradient accumulation steps: {grad_accum_steps}")
-print(f"Grad accum annealing: {EARLY_GRAD_ACCUM} -> {LATE_GRAD_ACCUM} at progress={ACCUM_SWITCH_PROGRESS}")
+    print(f"Time budget: {TIME_BUDGET}s")
+    print(f"Gradient accumulation steps: {grad_accum_steps}")
+    print(f"Grad accum annealing: {EARLY_GRAD_ACCUM} -> {LATE_GRAD_ACCUM} at progress={ACCUM_SWITCH_PROGRESS}")
 
 
-def get_lr_multiplier(progress, warmdown_ratio=None, final_lr_frac=None):
-    """WSD with per-optimizer warmdown (original schedule)."""
-    if warmdown_ratio is None:
-        warmdown_ratio = WARMDOWN_RATIO
-    if final_lr_frac is None:
-        final_lr_frac = FINAL_LR_FRAC
-    if progress < WARMUP_RATIO:
-        return progress / WARMUP_RATIO if WARMUP_RATIO > 0 else 1.0
-    elif warmdown_ratio <= 0.0 or progress < 1.0 - warmdown_ratio:
-        return 1.0
-    else:
-        cooldown = (1.0 - progress) / warmdown_ratio
-        return cooldown * 1.0 + (1 - cooldown) * final_lr_frac
+    def get_lr_multiplier(progress, warmdown_ratio=None, final_lr_frac=None):
+        """WSD with per-optimizer warmdown (original schedule)."""
+        if warmdown_ratio is None:
+            warmdown_ratio = WARMDOWN_RATIO
+        if final_lr_frac is None:
+            final_lr_frac = FINAL_LR_FRAC
+        if progress < WARMUP_RATIO:
+            return progress / WARMUP_RATIO if WARMUP_RATIO > 0 else 1.0
+        elif warmdown_ratio <= 0.0 or progress < 1.0 - warmdown_ratio:
+            return 1.0
+        else:
+            cooldown = (1.0 - progress) / warmdown_ratio
+            return cooldown * 1.0 + (1 - cooldown) * final_lr_frac
 
 
-# ---------------------------------------------------------------------------
-# Training loop
-# ---------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------
+    # Training loop
+    # ---------------------------------------------------------------------------
 
-t_start_training = time.time()
-smooth_train_loss = 0
-total_training_time = 0
-step = 0
-total_tokens_processed = 0  # Track actual tokens for final reporting
-batch_switched = False
-
-# Post-warmup momentum reset
-MOMENTUM_RESET_AT = [0.08]
-momentum_reset_done = set()
-
-# SWA: EMA weight averaging -- vectorized
-raw_model = model._orig_mod if hasattr(model, '_orig_mod') else model
-swa_param_list = list(raw_model.parameters())
-swa_ema_tensors = None
-swa_active = False
-swa_steps = 0
-
-while True:
-    torch.cuda.synchronize()
-    t0 = time.time()
-    for _micro_step in range(grad_accum_steps):
-        with autocast_ctx:
-            loss = model(x, y)
-        train_loss = loss.detach()
-        loss = loss / grad_accum_steps
-        loss.backward()
-        x, y, epoch = next(train_loader)
-
-    progress = min(total_training_time / TIME_BUDGET, 1.0)
-
-    # Gradient accumulation annealing: increase accum in late training
-    if not batch_switched and progress >= ACCUM_SWITCH_PROGRESS:
-        batch_switched = True
-        current_grad_accum = LATE_GRAD_ACCUM
-        grad_accum_steps = LATE_GRAD_ACCUM
-        current_total_batch = TOTAL_BATCH_SIZE_LATE
-        print(f"\n[ACCUM SWITCH] Switched to grad_accum={LATE_GRAD_ACCUM} at progress={progress:.3f}")
+    t_start_training = time.time()
+    smooth_train_loss = 0
+    total_training_time = 0
+    step = 0
+    total_tokens_processed = 0  # Track actual tokens for final reporting
+    batch_switched = False
 
     # Post-warmup momentum reset
-    for rp in MOMENTUM_RESET_AT:
-        if rp not in momentum_reset_done and progress >= rp:
-            muon_optimizer.reset_momentum(decay_factor=0.0)
-            momentum_reset_done.add(rp)
-            print(f"\n[MOMENTUM RESET at progress={progress:.3f}]")
+    MOMENTUM_RESET_AT = [0.08]
+    momentum_reset_done = set()
 
-    lrm = get_lr_multiplier(progress)
-    # Apply LR boost when using larger batch in late phase
-    lr_boost = LATE_LR_BOOST if batch_switched else 1.0
-    # Compute per-layer activity multiplier
-    activity_mults = {}
-    if progress >= ACTIVITY_START:
-        interp = min((progress - ACTIVITY_START) / (1.0 - ACTIVITY_START), 1.0)
-        for layer_idx, (early_m, late_m) in LAYER_ACTIVITY.items():
-            activity_mults[layer_idx] = early_m + interp * (late_m - early_m)
-    for group in muon_optimizer.param_groups:
-        base_lr = MUON_LR * group["lr_mult"] * lrm * lr_boost
-        # Apply gradient-informed activity scale if this is a layer group
-        li = group.get("layer_idx", None)
-        if li is not None and li in activity_mults:
-            base_lr *= activity_mults[li]
-        group["lr"] = base_lr
-    # per-group warmdown for Adam (hash tables get shorter warmdown + higher final LR)
-    adam_final_lrs = [FINAL_LR_FRAC, HASH_FINAL_LR_FRAC]
-    for i, group in enumerate(adam_optimizer.param_groups):
-        warmdown = adam_warmdowns[i] if i < len(adam_warmdowns) else WARMDOWN_RATIO
-        flr = adam_final_lrs[i] if i < len(adam_final_lrs) else FINAL_LR_FRAC
-        group_lrm = get_lr_multiplier(progress, warmdown_ratio=warmdown, final_lr_frac=flr)
-        group["lr"] = adam_base_lrs[i] * group_lrm * lr_boost
-    adam_lr = adam_optimizer.param_groups[0]["lr"]  # For logging
+    # SWA: EMA weight averaging -- vectorized
+    raw_model = model._orig_mod if hasattr(model, '_orig_mod') else model
+    swa_param_list = list(raw_model.parameters())
+    swa_ema_tensors = None
+    swa_active = False
+    swa_steps = 0
 
-    # Block-coordinate: pure momentum oscillation
-    MOM_HIGH = 0.97
-    MOM_LOW = 0.88
-    if step % 2 == 0:
+    while True:
+        torch.cuda.synchronize()
+        t0 = time.time()
+        for _micro_step in range(grad_accum_steps):
+            with autocast_ctx:
+                loss = model(x, y)
+            train_loss = loss.detach()
+            loss = loss / grad_accum_steps
+            loss.backward()
+            x, y, epoch = next(train_loader)
+
+        progress = min(total_training_time / TIME_BUDGET, 1.0)
+
+        # Gradient accumulation annealing: increase accum in late training
+        if not batch_switched and progress >= ACCUM_SWITCH_PROGRESS:
+            batch_switched = True
+            current_grad_accum = LATE_GRAD_ACCUM
+            grad_accum_steps = LATE_GRAD_ACCUM
+            current_total_batch = TOTAL_BATCH_SIZE_LATE
+            print(f"\n[ACCUM SWITCH] Switched to grad_accum={LATE_GRAD_ACCUM} at progress={progress:.3f}")
+
+        # Post-warmup momentum reset
+        for rp in MOMENTUM_RESET_AT:
+            if rp not in momentum_reset_done and progress >= rp:
+                muon_optimizer.reset_momentum(decay_factor=0.0)
+                momentum_reset_done.add(rp)
+                print(f"\n[MOMENTUM RESET at progress={progress:.3f}]")
+
+        lrm = get_lr_multiplier(progress)
+        # Apply LR boost when using larger batch in late phase
+        lr_boost = LATE_LR_BOOST if batch_switched else 1.0
+        # Compute per-layer activity multiplier
+        activity_mults = {}
+        if progress >= ACTIVITY_START:
+            interp = min((progress - ACTIVITY_START) / (1.0 - ACTIVITY_START), 1.0)
+            for layer_idx, (early_m, late_m) in LAYER_ACTIVITY.items():
+                activity_mults[layer_idx] = early_m + interp * (late_m - early_m)
         for group in muon_optimizer.param_groups:
-            group["momentum"] = MOM_HIGH
-    else:
-        for group in muon_optimizer.param_groups:
-            group["momentum"] = MOM_LOW
+            base_lr = MUON_LR * group["lr_mult"] * lrm * lr_boost
+            # Apply gradient-informed activity scale if this is a layer group
+            li = group.get("layer_idx", None)
+            if li is not None and li in activity_mults:
+                base_lr *= activity_mults[li]
+            group["lr"] = base_lr
+        # per-group warmdown for Adam (hash tables get shorter warmdown + higher final LR)
+        adam_final_lrs = [FINAL_LR_FRAC, HASH_FINAL_LR_FRAC]
+        for i, group in enumerate(adam_optimizer.param_groups):
+            warmdown = adam_warmdowns[i] if i < len(adam_warmdowns) else WARMDOWN_RATIO
+            flr = adam_final_lrs[i] if i < len(adam_final_lrs) else FINAL_LR_FRAC
+            group_lrm = get_lr_multiplier(progress, warmdown_ratio=warmdown, final_lr_frac=flr)
+            group["lr"] = adam_base_lrs[i] * group_lrm * lr_boost
+        adam_lr = adam_optimizer.param_groups[0]["lr"]  # For logging
 
-    muon_optimizer.step()
-    adam_optimizer.step()
-    muon_optimizer.zero_grad(set_to_none=True)
-    adam_optimizer.zero_grad(set_to_none=True)
-
-    # SWA: vectorized EMA
-    if progress >= SWA_START_FRAC:
-        if not swa_active:
-            swa_active = True
-            swa_ema_tensors = [p.data.clone() for p in swa_param_list]
-            print(f"\n[SWA] Started EMA averaging at progress={progress:.3f}", flush=True)
+        # Block-coordinate: pure momentum oscillation
+        MOM_HIGH = 0.97
+        MOM_LOW = 0.88
+        if step % 2 == 0:
+            for group in muon_optimizer.param_groups:
+                group["momentum"] = MOM_HIGH
         else:
-            torch._foreach_mul_(swa_ema_tensors, SWA_DECAY)
-            torch._foreach_add_(swa_ema_tensors, [p.data for p in swa_param_list], alpha=1.0 - SWA_DECAY)
-        swa_steps += 1
+            for group in muon_optimizer.param_groups:
+                group["momentum"] = MOM_LOW
 
-    train_loss_f = train_loss.item()
+        muon_optimizer.step()
+        adam_optimizer.step()
+        muon_optimizer.zero_grad(set_to_none=True)
+        adam_optimizer.zero_grad(set_to_none=True)
 
-    if math.isnan(train_loss_f) or train_loss_f > 100:
-        print("FAIL")
-        exit(1)
+        # SWA: vectorized EMA
+        if progress >= SWA_START_FRAC:
+            if not swa_active:
+                swa_active = True
+                swa_ema_tensors = [p.data.clone() for p in swa_param_list]
+                print(f"\n[SWA] Started EMA averaging at progress={progress:.3f}", flush=True)
+            else:
+                torch._foreach_mul_(swa_ema_tensors, SWA_DECAY)
+                torch._foreach_add_(swa_ema_tensors, [p.data for p in swa_param_list], alpha=1.0 - SWA_DECAY)
+            swa_steps += 1
 
-    torch.cuda.synchronize()
-    t1 = time.time()
-    dt = t1 - t0
+        train_loss_f = train_loss.item()
 
-    if step > 10:
-        total_training_time += dt
+        if math.isnan(train_loss_f) or train_loss_f > 100:
+            print("FAIL")
+            exit(1)
 
-    total_tokens_processed += current_total_batch
+        torch.cuda.synchronize()
+        t1 = time.time()
+        dt = t1 - t0
 
-    ema_beta = 0.9
-    smooth_train_loss = ema_beta * smooth_train_loss + (1 - ema_beta) * train_loss_f
-    debiased_smooth_loss = smooth_train_loss / (1 - ema_beta ** (step + 1))
-    pct_done = 100 * progress
-    tok_per_sec = int(current_total_batch / dt)
-    mfu = 100 * num_flops_per_token * current_total_batch / dt / B200_BF16_PEAK_FLOPS
-    remaining = max(0, TIME_BUDGET - total_training_time)
+        if step > 10:
+            total_training_time += dt
 
-    if step % 10 == 0:
-        muon_lr_min = min(g["lr"] for g in muon_optimizer.param_groups)
-        muon_lr_max = max(g["lr"] for g in muon_optimizer.param_groups)
-        print(
-            f"\rstep {step:05d} ({pct_done:.1f}%) | loss: {debiased_smooth_loss:.6f} | muon_lr: {muon_lr_min:.4f}-{muon_lr_max:.4f} | adam_lr: {adam_lr:.2e} | dt: {dt * 1000:.0f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.1f}% | epoch: {epoch} | remaining: {remaining:.0f}s    ",
-            end="",
-            flush=True,
-        )
+        total_tokens_processed += current_total_batch
 
-    if step == 0:
-        gc.collect()
-        gc.freeze()
-        gc.disable()
+        ema_beta = 0.9
+        smooth_train_loss = ema_beta * smooth_train_loss + (1 - ema_beta) * train_loss_f
+        debiased_smooth_loss = smooth_train_loss / (1 - ema_beta ** (step + 1))
+        pct_done = 100 * progress
+        tok_per_sec = int(current_total_batch / dt)
+        mfu = 100 * num_flops_per_token * current_total_batch / dt / B200_BF16_PEAK_FLOPS
+        remaining = max(0, TIME_BUDGET - total_training_time)
 
-    step += 1
+        if step % 10 == 0:
+            muon_lr_min = min(g["lr"] for g in muon_optimizer.param_groups)
+            muon_lr_max = max(g["lr"] for g in muon_optimizer.param_groups)
+            print(
+                f"\rstep {step:05d} ({pct_done:.1f}%) | loss: {debiased_smooth_loss:.6f} | muon_lr: {muon_lr_min:.4f}-{muon_lr_max:.4f} | adam_lr: {adam_lr:.2e} | dt: {dt * 1000:.0f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.1f}% | epoch: {epoch} | remaining: {remaining:.0f}s    ",
+                end="",
+                flush=True,
+            )
 
-    if step > 10 and total_training_time >= TIME_BUDGET:
-        break
+        if step == 0:
+            gc.collect()
+            gc.freeze()
+            gc.disable()
 
-print()
+        step += 1
 
-total_tokens = total_tokens_processed
+        if step > 10 and total_training_time >= TIME_BUDGET:
+            break
 
-# Apply SWA-averaged weights for evaluation
-if swa_active and swa_ema_tensors is not None:
-    for p, ema in zip(swa_param_list, swa_ema_tensors):
-        p.data.copy_(ema)
-    print(f"[SWA] Applied EMA-averaged weights ({swa_steps} averaging steps)")
+    print()
 
-model.eval()
-with autocast_ctx:
-    val_bpb = evaluate_bpb(model, tokenizer, DEVICE_BATCH_SIZE)
+    total_tokens = total_tokens_processed
 
-t_end = time.time()
-startup_time = t_start_training - t_start
-avg_batch = total_tokens_processed / max(step, 1)
-steady_state_mfu = (
-    100
-    * num_flops_per_token
-    * avg_batch
-    * (step - 10)
-    / total_training_time
-    / B200_BF16_PEAK_FLOPS
-    if total_training_time > 0
-    else 0
-)
-peak_vram_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
+    # Apply SWA-averaged weights for evaluation
+    if swa_active and swa_ema_tensors is not None:
+        for p, ema in zip(swa_param_list, swa_ema_tensors):
+            p.data.copy_(ema)
+        print(f"[SWA] Applied EMA-averaged weights ({swa_steps} averaging steps)")
 
-print("---")
-print(f"val_bpb:          {val_bpb:.6f}")
-print(f"training_seconds: {total_training_time:.1f}")
-print(f"total_seconds:    {t_end - t_start:.1f}")
-print(f"peak_vram_mb:     {peak_vram_mb:.1f}")
-print(f"mfu_percent:      {steady_state_mfu:.2f}")
-print(f"total_tokens_M:   {total_tokens / 1e6:.1f}")
-print(f"num_steps:        {step}")
-print(f"num_params_M:     {num_params / 1e6:.1f}")
-print(f"depth:            {TOTAL_LAYERS}")
+    model.eval()
+    with autocast_ctx:
+        val_bpb = evaluate_bpb(model, tokenizer, DEVICE_BATCH_SIZE)
+
+    t_end = time.time()
+    startup_time = t_start_training - t_start
+    avg_batch = total_tokens_processed / max(step, 1)
+    steady_state_mfu = (
+        100
+        * num_flops_per_token
+        * avg_batch
+        * (step - 10)
+        / total_training_time
+        / B200_BF16_PEAK_FLOPS
+        if total_training_time > 0
+        else 0
+    )
+    peak_vram_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
+
+    print("---")
+    print(f"val_bpb:          {val_bpb:.6f}")
+    print(f"training_seconds: {total_training_time:.1f}")
+    print(f"total_seconds:    {t_end - t_start:.1f}")
+    print(f"peak_vram_mb:     {peak_vram_mb:.1f}")
+    print(f"mfu_percent:      {steady_state_mfu:.2f}")
+    print(f"total_tokens_M:   {total_tokens / 1e6:.1f}")
+    print(f"num_steps:        {step}")
+    print(f"num_params_M:     {num_params / 1e6:.1f}")
+    print(f"depth:            {TOTAL_LAYERS}")

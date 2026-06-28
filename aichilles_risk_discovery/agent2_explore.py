@@ -13,11 +13,21 @@ run_agent_type(sig, app_dir, best_program_path, results_dir, client,
   witnesses are the BUG-labeled subset of that matrix, so no separate file is written.
 """
 import json
+import os
 import sys
 from pathlib import Path
 
 import anthropic
 import numpy as np
+
+# Some apps (e.g. recursive/nanochat) train in a subprocess, so sys.settrace
+# coverage of the imported program is uninformative (it only sees the module's
+# import-time def lines, identical for every workload — which both stalls
+# MAP-Elites novelty and produces a meaningless "__module__" trigger in Agent 3).
+# For those apps the orchestrator sets AICHILLES_NO_COVERAGE=1: we skip coverage,
+# fall back to the param-space novelty descriptor, and let Agent 3 root-cause from
+# the crash traceback instead.
+_COLLECT_COV = os.environ.get("AICHILLES_NO_COVERAGE") != "1"
 
 from archive import (
     MapElitesArchive, MatrixV,
@@ -304,7 +314,7 @@ def run_agent_type(
             if sig != Signature.CORRECTNESS and any(w == crash_wl for crash_wl in crash_workloads):
                 continue
             result_pp = run_one(str(best_program_path), run_workload_code, {**w, "n_seeds": 1},
-                                timeout=timeout, collect_coverage=True, app_dir=str(app_dir))
+                                timeout=timeout, collect_coverage=_COLLECT_COV, app_dir=str(app_dir))
             if result_pp.get("error") and sig != Signature.CORRECTNESS:
                 continue
             raw_counts = result_pp.get("coverage", {})
@@ -322,6 +332,8 @@ def run_agent_type(
             entry = {"c": seed.get("c", {}), "w": w, "v": v_norm.tolist(),
                      "label": label, "signatures": fired_sigs, "delta": max_delta,
                      "round": -1, "v_norm": v_norm.tolist(),
+                     "error_pp": (result_pp_oracle.get("error") or result_pp.get("error") or ""),
+                     "traceback_pp": (result_pp_oracle.get("traceback") or result_pp.get("traceback") or ""),
                      "metrics": {
                          "time_p":   result_p["time"],
                          "time_pp":  result_pp_oracle["time"],
@@ -388,9 +400,11 @@ def run_agent_type(
 
             print(f"[agent2/{sig.value}] eval {oracle_calls + 1}/{budget} | "
                   f"w={ {k: w[k] for k in sorted(w) if k != 'n_seeds'} }", flush=True)
-            # Step a: collect coverage from P' (1 seed — its output isn't scored)
+            # Step a: collect coverage from P' (1 seed — its output isn't scored).
+            # When AICHILLES_NO_COVERAGE=1 this still runs (for early crash/timeout
+            # detection) but without tracing; novelty then uses the param-space descriptor.
             result_pp_cov = run_one(str(best_program_path), run_workload_code, {**w, "n_seeds": 1},
-                                    timeout=timeout, collect_coverage=True, app_dir=str(app_dir))
+                                    timeout=timeout, collect_coverage=_COLLECT_COV, app_dir=str(app_dir))
 
             # Handle P' timeout as scalab_time witness
             if result_pp_cov.get("error") == "timeout":
@@ -464,6 +478,10 @@ def run_agent_type(
                 "signatures": fired_sigs,
                 "delta": max_delta,
                 "round": round_idx,
+                # P' crash traceback (its last frames name the real file:line of the
+                # fault) — Agent 3 root-causes from this when coverage is uninformative.
+                "error_pp": (result_pp_oracle.get("error") or result_pp_cov.get("error") or ""),
+                "traceback_pp": (result_pp_oracle.get("traceback") or result_pp_cov.get("traceback") or ""),
                 "metrics": {
                     "time_p":   result_p["time"],
                     "time_pp":  result_pp_oracle["time"],

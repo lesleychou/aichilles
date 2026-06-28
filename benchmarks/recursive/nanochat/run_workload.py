@@ -15,11 +15,19 @@ Seed policy (controls cost):
   it reproduces. The coverage-only run is forced to n_seeds=1 (its output is unused
   by the oracle), so a screened workload costs ~ 1 + 3 + 3 trainings.
 
-Why a subprocess (not in-process): the recursive scripts train at module import,
-hold torch.compile + CUDA state, and the harness forks its worker — a fresh
-interpreter per call is the only CUDA-safe option. PR_SET_PDEATHSIG ties each
-training child's lifetime to the harness worker so a harness SIGKILL (timeout)
+Why a subprocess (not in-process): the program files are IMPORT-SAFE (their train
+block is guarded behind `if __name__ == "__main__" or AICHILLES_RUN==1`), so the
+harness can import them to get `program_module.__file__` WITHOUT training. We then
+launch that same file as a fresh subprocess with AICHILLES_RUN=1 to actually train.
+A fresh interpreter per call is the only CUDA-safe option (the scripts hold
+torch.compile + CUDA state and the harness forks its worker). PR_SET_PDEATHSIG ties
+each training child's lifetime to the harness worker so a harness SIGKILL (timeout)
 can't leak an orphaned GPU process.
+
+Root-cause: on a crash we re-raise with the child's FULL traceback (its last lines
+name the real file:line, e.g. best_program.py:319 `_decorr_bigram_primes[j]`
+IndexError). The harness captures that in result["error"]/["traceback"], Agent 2
+stores it on the matrix entry, and Agent 3 root-causes from it — no coverage needed.
 
 IMPORTANT: the harness timeout (run_all_app --timeout) must cover ALL n_seeds
 trainings in one call, since they run serially here.
@@ -70,6 +78,20 @@ def _pdeathsig():  # pragma: no cover - Linux child-process setup
         pass
 
 
+def _app_root_for(script: str) -> str:
+    """Walk up from the program file's directory to the dir that holds lib.py
+    (the app root, where evaluator.py / lib.py live). The training subprocess
+    gets this on PYTHONPATH so `from lib import ...` resolves regardless of whether
+    the program file sits at the app root (initial_program.py) or in a best/<algo>/
+    subdir (best_program.py)."""
+    d = os.path.dirname(os.path.abspath(script))
+    while d != os.path.dirname(d):
+        if os.path.exists(os.path.join(d, "lib.py")):
+            return d
+        d = os.path.dirname(d)
+    return os.path.dirname(os.path.abspath(script))
+
+
 def _run_once(script, base_env, seed, preexec, label):
     """Run one training subprocess at `seed`, STREAMING its live progress
     (the script's own 'step | loss | remaining' line) to stderr so the user can
@@ -111,14 +133,20 @@ def _run_once(script, base_env, seed, preexec, label):
 
 
 def run_workload(program_module, workload: dict):
+    # The program file is import-safe; run IT as the training subprocess. __file__
+    # is the absolute path the harness imported, so P and P' always train their own
+    # real source (the same file Agent 3 reads for root-cause).
+    script = program_module.__file__
+    app_root = _app_root_for(script)
     base_env = {
-        **os.environ,  # propagates DATA_DIR, CUDA_VISIBLE_DEVICES, etc.
+        **os.environ,  # propagates DATA_DIR, CUDA_VISIBLE_DEVICES, AICHILLES_EAGER, etc.
+        "AICHILLES_RUN": "1",  # trips the train guard when not literally __main__
+        "PYTHONPATH": app_root + os.pathsep + os.environ.get("PYTHONPATH", ""),
         "DEPTH":             str(workload.get("depth", 12)),
         "SEQ_LEN":           str(workload.get("seq_len", 2048)),
         "DEVICE_BATCH_SIZE": str(workload.get("device_batch_size", 64)),
         "TIME_BUDGET":       str(workload.get("time_budget", 30)),
     }
-    script = program_module.PROGRAM_SCRIPT
     label = os.path.basename(script)
     preexec = _pdeathsig if sys.platform.startswith("linux") else None
 
