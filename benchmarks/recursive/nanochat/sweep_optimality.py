@@ -25,6 +25,7 @@ is what matters. Confirm any crossover faithfully (drop AICHILLES_EAGER, full ev
 """
 import argparse
 import importlib.util
+import json
 import os
 import sys
 
@@ -48,13 +49,22 @@ def _load(path):
     return mod
 
 
-def _bpb(program, w):
-    """Mean val_bpb for `program` on workload `w`; None if it crashed."""
+def _run(program, w):
+    """Full run_workload output dict for `program` on `w`; None if it crashed."""
     try:
-        out = rw.run_workload(program, w)
-        return float(out["val_bpb_mean"])
+        return rw.run_workload(program, w)
     except Exception as exc:
         sys.stderr.write(f"    crash on {w}: {str(exc)[-200:]}\n")
+        return None
+
+
+def _mean_bpb(out):
+    """Pull mean val_bpb from a run_workload output dict; None if missing."""
+    if not out:
+        return None
+    try:
+        return float(out["val_bpb_mean"])
+    except (KeyError, TypeError, ValueError):
         return None
 
 
@@ -104,24 +114,52 @@ def main():
     print(f"{args.axis:>16} | {'P bpb':>8} {'Pp bpb':>8} {'gap':>8}  verdict")
     print("-" * 60)
 
-    xs, ys_p, ys_pp = [], [], []
+    out_base = args.out if os.path.isabs(args.out) else os.path.join(HERE, args.out)
+    out_base = os.path.splitext(out_base)[0]
+    json_path, csv_path = out_base + ".json", out_base + ".csv"
+    meta = {"reference": ref_path, "candidate": cand_path, "axis": args.axis,
+            "values": values, "fixed": fixed, "n_seeds": args.n_seeds,
+            "eager": os.environ.get("AICHILLES_EAGER", "0"),
+            "eval_tokens": os.environ.get("AICHILLES_EVAL_TOKENS", "default")}
+
+    def _save_raw(records):
+        # Rewritten after EACH config so an interrupted (multi-hour) run keeps its
+        # partial results. JSON holds the full run_workload output (incl. per-seed
+        # val_bpb_seeds, std, num_steps, peak_vram_mb, training_seconds) for P and P'.
+        with open(json_path, "w") as f:
+            json.dump({**meta, "records": records}, f, indent=2)
+        with open(csv_path, "w") as f:
+            f.write("value,P_bpb,Pp_bpb,gap,P_steps,Pp_steps,P_std,Pp_std,"
+                    "P_seconds,Pp_seconds\n")
+            for r in records:
+                op, opp = r["P"] or {}, r["P_prime"] or {}
+                f.write(f'{r["value"]},{r["P_bpb"]},{r["Pp_bpb"]},{r["gap"]},'
+                        f'{op.get("num_steps","")},{opp.get("num_steps","")},'
+                        f'{op.get("val_bpb_std","")},{opp.get("val_bpb_std","")},'
+                        f'{op.get("training_seconds","")},{opp.get("training_seconds","")}\n')
+
+    records, xs, ys_p, ys_pp = [], [], [], []
     for v in values:
         w = {**fixed, args.axis: v}
-        bpb_p = _bpb(p, w)
-        bpb_pp = _bpb(pp, w)
+        out_p, out_pp = _run(p, w), _run(pp, w)
+        bpb_p, bpb_pp = _mean_bpb(out_p), _mean_bpb(out_pp)
+        gap = (bpb_pp - bpb_p) if (bpb_p is not None and bpb_pp is not None) else None
+        records.append({"value": v, "workload": w, "P_bpb": bpb_p, "Pp_bpb": bpb_pp,
+                        "gap": gap, "P": out_p, "P_prime": out_pp})
+        _save_raw(records)  # persist after every config
         if bpb_p is None or bpb_pp is None:
             verdict = "CRASH (correctness, not optimality)"
             print(f"{v:>16} | {'crash' if bpb_p is None else f'{bpb_p:.4f}':>8} "
                   f"{'crash' if bpb_pp is None else f'{bpb_pp:.4f}':>8} {'n/a':>8}  {verdict}")
             continue
-        gap = bpb_pp - bpb_p
         rel = gap / max(bpb_p, bpb_pp)
         verdict = (f"REGRESSION (P' worse {rel*100:.1f}%)" if gap > 0 else "P' better")
         print(f"{v:>16} | {bpb_p:>8.4f} {bpb_pp:>8.4f} {gap:>+8.4f}  {verdict}")
         xs.append(v); ys_p.append(bpb_p); ys_pp.append(bpb_pp)
 
+    print(f"\nSaved raw results: {json_path}\n                   {csv_path}")
     if not xs:
-        sys.exit("\nNo non-crash points to plot.")
+        sys.exit("No non-crash points to plot.")
 
     # Curve
     fig, ax = plt.subplots(figsize=(7, 5))
