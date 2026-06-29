@@ -580,7 +580,10 @@ def main() -> None:
                                                  rw_code,
                                                  cluster["representative"]["w"], app_dir)
                     if rep_rp.get("error") or rep_rpp.get("error"):
-                        rep_rp, rep_rpp = None, None
+                        # Re-run failed (e.g. no GPU here) — fall back to stored
+                        # metrics so the optimality y-field chooser still sees the
+                        # output (otherwise it defaults to time/seconds).
+                        rep_rp, rep_rpp = _stored_pair(cluster.get("representative", {}))
             else:
                 # --max_witnesses 0 (or no app dir): plot the metrics already
                 # stored on each witness during the Agent 2 oracle pass — no re-run.
