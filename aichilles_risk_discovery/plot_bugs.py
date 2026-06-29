@@ -6,6 +6,16 @@ Usage:
   python plot_bugs.py <results_dir> [<results_dir> ...] \
     [--x_param <param>] [--sig <scalab_time|scalab_mem|optimality|correctness>] \
     [--max_witnesses <N>] [--out <path.png>] [--no_reproduce]
+
+Apps under benchmarks/ADRS/ or benchmarks/recursive/ (e.g. nanochat) are both
+supported. For nanochat, plot from STORED metrics with NO re-run — a re-run trains a model
+per witness and would blow the 60s re-run timeout (and Stage-1 reproduce trains
+too). Use both flags:
+  python plot_bugs.py results/nanochat/<run> --sig optimality \
+      --max_witnesses 0 --no_reproduce
+The optimality y-axis is shown as val_bpb (lower = better). (If you DO re-run and
+a training times out, the witness now falls back to its stored metrics instead of
+being dropped.)
 """
 import argparse
 import json
@@ -18,8 +28,62 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-_ADRS_ROOT = Path(__file__).parent.parent / "benchmarks" / "ADRS"
+_BENCH_ROOT = Path(__file__).parent.parent / "benchmarks"
+# Apps live under benchmarks/ADRS/ OR benchmarks/recursive/ (e.g. nanochat).
+_APP_ROOTS = [_BENCH_ROOT / "ADRS", _BENCH_ROOT / "recursive"]
 _SIG_ORDER = ["scalab_time", "scalab_mem", "optimality", "correctness"]
+# Known quality fields, in preference order, for the optimality y-axis. nanochat's
+# run_workload exposes val_bpb_mean (string) and neg_val_bpb (= -bpb); both are
+# plotted as the intuitive val_bpb (lower = better).
+_QUALITY_FIELDS = [("val_bpb_mean", "val_bpb (lower=better)"),
+                   ("neg_val_bpb",  "val_bpb (lower=better)")]
+
+
+def _resolve_app_dir(app: str) -> Path | None:
+    """Find the app directory under any known root (ADRS or recursive)."""
+    for root in _APP_ROOTS:
+        candidate = root / app
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _as_float(v) -> float | None:
+    """Coerce int/float/numeric-string to float; None otherwise. Lets stored
+    string metrics (e.g. nanochat's val_bpb_mean='1.0584') be plotted."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        try:
+            return float(v)
+        except ValueError:
+            return None
+    return None
+
+
+def _optimality_field(p_out: dict, pp_out: dict) -> tuple[str, str]:
+    """Pick the optimality y-field + unit. Prefer a known quality field (so
+    nanochat plots val_bpb), else the numeric field with the largest relative gap.
+    Falls back to ('time','seconds') if nothing numeric is comparable."""
+    for f, unit in _QUALITY_FIELDS:
+        if _as_float(p_out.get(f)) is not None and _as_float(pp_out.get(f)) is not None:
+            return f, unit
+    best_field, best_gap = None, -1.0
+    for field, pv in p_out.items():
+        pvf = _as_float(pv)
+        if pvf is None:
+            continue
+        ppvf = _as_float(pp_out.get(field))
+        if ppvf is None:
+            continue
+        gap = abs(pvf - ppvf) / (max(abs(pvf), abs(ppvf)) + 1e-9)
+        if gap > best_gap:
+            best_gap, best_field = gap, field
+    if best_field:
+        return best_field, best_field
+    return "time", "seconds"
 
 
 # ── Data loading ─────────────────────────────────────────────────────────────
@@ -130,21 +194,8 @@ def _y_metrics_for_cluster(cluster: dict, rep_rp: dict | None,
         elif sig == "optimality":
             y_field, y_unit = "time", "seconds"  # fallback
             if rep_rp and rep_rpp:
-                p_out  = rep_rp.get("output")  or {}
-                pp_out = rep_rpp.get("output") or {}
-                best_field, best_gap = None, -1.0
-                for field, pv in p_out.items():
-                    if not isinstance(pv, (int, float)):
-                        continue
-                    ppv = pp_out.get(field)
-                    if not isinstance(ppv, (int, float)):
-                        continue
-                    gap = abs(float(pv) - float(ppv)) / (
-                        max(abs(float(pv)), abs(float(ppv))) + 1e-9)
-                    if gap > best_gap:
-                        best_gap, best_field = gap, field
-                if best_field:
-                    y_field, y_unit = best_field, best_field
+                y_field, y_unit = _optimality_field(rep_rp.get("output") or {},
+                                                    rep_rpp.get("output") or {})
             result.append((sig, y_field, y_unit))
     return result
 
@@ -158,8 +209,11 @@ def extract_y_value(result: dict, field: str) -> float | None:
         mb = result.get("mem_bytes")
         return mb / (1024.0 * 1024.0) if mb is not None else None
     out = result.get("output") or {}
-    val = out.get(field)
-    return float(val) if isinstance(val, (int, float)) else None
+    val = _as_float(out.get(field))
+    if val is None:
+        return None
+    # neg_val_bpb is stored as -bpb (higher=better); show the intuitive val_bpb.
+    return -val if field == "neg_val_bpb" else val
 
 
 # ── Harness re-runs ───────────────────────────────────────────────────────────
@@ -187,6 +241,13 @@ def rerun_witnesses(sampled: list[dict], initial_path: Path, best_path: Path,
         rp, rpp = rerun_pair(initial_path, best_path, run_workload_code,
                              w_entry["w"], app_dir)
         if rp.get("error") or rpp.get("error"):
+            # Re-run failed (e.g. nanochat training exceeds the 60s re-run timeout).
+            # Fall back to the metrics already captured during Agent 2 so the witness
+            # is still plotted instead of silently dropped.
+            m = w_entry.get("metrics")
+            if m:
+                results.append((w_entry, _result_from_metrics(m, "p"),
+                                _result_from_metrics(m, "pp")))
             continue
         results.append((w_entry, rp, rpp))
     return results
@@ -457,10 +518,12 @@ def main() -> None:
     if len(apps) > 1:
         sys.exit(f"Mixed apps: {apps}. All results_dirs must be for the same app.")
 
-    app_dir = _ADRS_ROOT / apps.pop()
-    if not app_dir.exists():
-        print(f"WARNING: app dir {app_dir} not found; skipping re-runs.", file=sys.stderr)
-        app_dir = None
+    app_name = apps.pop()
+    app_dir = _resolve_app_dir(app_name)
+    if app_dir is None:
+        print(f"WARNING: app dir for '{app_name}' not found under "
+              f"{[str(r) for r in _APP_ROOTS]}; skipping re-runs (stored metrics only).",
+              file=sys.stderr)
 
     out_path = args.out or (args.results_dirs[0] / "bug_plot.png")
     rw_code  = (app_dir / "run_workload.py").read_text() if app_dir else ""
