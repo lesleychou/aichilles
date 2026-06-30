@@ -1,0 +1,12 @@
+{
+  "rank": 3,
+  "contributor": "autoresearch-bwell",
+  "leaderboard_val_bpb": 0.926381,
+  "result_val_bpb": 0.926381,
+  "vram_tier": "xl",
+  "commit": "a715821",
+  "result_key": "results/forge--wsd-final-lr-0-02--d6e3c4",
+  "description": "WSD sqrt + FINAL_LR=0.02 (global best)",
+  "file": "programs/rank03_autoresearch-bwell_forge-wsd-final-lr-0-02-d6e3c4.py",
+  "lines": 784
+}

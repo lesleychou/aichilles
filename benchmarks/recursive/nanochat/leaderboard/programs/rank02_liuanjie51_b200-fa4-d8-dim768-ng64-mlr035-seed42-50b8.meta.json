@@ -1,0 +1,12 @@
+{
+  "rank": 2,
+  "contributor": "liuanjie51",
+  "leaderboard_val_bpb": 0.902291,
+  "result_val_bpb": 0.902291,
+  "vram_tier": "xl",
+  "commit": "ea9dd1e",
+  "result_key": "results/b200-fa4-d8-dim768-ng64-mlr035-seed42--50b898",
+  "description": "B200 FA4 d8 dim768 ngram64 TTTL bs72 mlr0.035 elr0.6 seed42",
+  "file": "programs/rank02_liuanjie51_b200-fa4-d8-dim768-ng64-mlr035-seed42-50b8.py",
+  "lines": 1294
+}

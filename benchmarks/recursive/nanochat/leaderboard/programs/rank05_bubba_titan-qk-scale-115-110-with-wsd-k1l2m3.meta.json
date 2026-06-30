@@ -1,0 +1,12 @@
+{
+  "rank": 5,
+  "contributor": "bubba",
+  "leaderboard_val_bpb": 0.936241,
+  "result_val_bpb": 0.936241,
+  "vram_tier": null,
+  "commit": "81d8320",
+  "result_key": "results/titan--qk-scale-115-110-with-wsd--k1l2m3",
+  "description": "QK scale 1.15 -> 1.10 with WSD schedule",
+  "file": "programs/rank05_bubba_titan-qk-scale-115-110-with-wsd-k1l2m3.py",
+  "lines": 768
+}

@@ -1,0 +1,12 @@
+{
+  "rank": 4,
+  "contributor": "autoresearch-phoenix",
+  "leaderboard_val_bpb": 0.927396,
+  "result_val_bpb": 0.927396,
+  "vram_tier": null,
+  "commit": null,
+  "result_key": "results/overmind--manual-emb115--1773712675",
+  "description": "EMBEDDING_LR 1.15 [emb115]",
+  "file": "programs/rank04_autoresearch-phoenix_overmind-manual-emb115-1773712675.py",
+  "lines": 782
+}

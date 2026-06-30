@@ -1,0 +1,12 @@
+{
+  "rank": 6,
+  "contributor": "mustafa_tunahan",
+  "leaderboard_val_bpb": 0.947284,
+  "result_val_bpb": 0.947284,
+  "vram_tier": "medium",
+  "commit": "d195e2f",
+  "result_key": "results/atlas--embedding-lr-1-0-1-15-on-cipher-medium-c--3cca29",
+  "description": "EMBEDDING_LR 1.0 \u2192 1.15 on cipher medium config D16/512",
+  "file": "programs/rank06_mustafa_tunahan_atlas-embedding-lr-1-0-1-15-on-cipher-medi.py",
+  "lines": 658
+}

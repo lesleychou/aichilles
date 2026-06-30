@@ -1,0 +1,12 @@
+{
+  "rank": 1,
+  "contributor": "vora",
+  "leaderboard_val_bpb": 0.900018,
+  "result_val_bpb": 0.900018,
+  "vram_tier": "xl",
+  "commit": "1495a10",
+  "result_key": "results/vora--ns-steps-7-muon-orthog--13ff55",
+  "description": "NS_STEPS=7 (Muon Newton-Schulz orthogonalization iters; champion used 5). Systematic single-variable sweep found ns=7 optimal: ns6=0.900078, ns7=0.900055, ns8=0.900327 (seed42). Reported val_bpb=0.900018 is ns7+seed1 (seed42=0.900055; seed contributes ~0.00004 noise). All other knobs = champion (d8 ",
+  "file": "programs/rank01_vora_vora-ns-steps-7-muon-orthog-13ff55.py",
+  "lines": 1296
+}
