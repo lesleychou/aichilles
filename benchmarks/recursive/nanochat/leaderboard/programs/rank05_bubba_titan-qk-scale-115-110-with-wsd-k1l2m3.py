@@ -25,42 +25,39 @@ inductor_config.max_autotune_pointwise = True
 import torch.nn as nn
 import torch.nn.functional as F
 
-from kernels import get_kernel
-cap = torch.cuda.get_device_capability()
+# --- SDPA attention shim (auto-inserted by _adapt_autoresearch.py) ---
+#     Replaces flash-attn-3/`kernels` (moving trust+version gates) and flash-attn-4
+#     (Blackwell-only). Same causal + sliding-window math, GQA-aware. Exposes BOTH
+#     `flash_attn_func(...)` and `fa3.flash_attn_func(...)`. Layout (B,T,H,D)<->(B,H,T,D).
+import torch.nn.functional as _F_sdpa
 
-USE_FLEX_ATTENTION = cap[0] >= 10  # Blackwell (SM100) and future architectures
+cap = torch.cuda.get_device_capability()  # kept: some programs read it elsewhere
 
-if USE_FLEX_ATTENTION:
-    from functools import partial
-    from torch.nn.attention.flex_attention import flex_attention, create_block_mask
-    _flex_attention_compiled = torch.compile(
-        flex_attention,
-        dynamic=False,
-    )
-    print("Using FlexAttention with FA4 backend (Blackwell)")
-else:
-    # varunneal's FA3 is Hopper only, use kernels-community on non-Hopper GPUs
-    repo = "varunneal/flash-attention-3" if cap == (9, 0) else "kernels-community/flash-attn3"
-    fa3 = get_kernel(repo).flash_attn_interface
-    print(f"Using FA3 from {repo}")
 
-if USE_FLEX_ATTENTION:
-    def _causal_mask(b, h, q_idx, kv_idx):
-        return q_idx >= kv_idx
+def flash_attn_func(q, k, v, causal=True, window_size=(-1, -1)):
+    q, k, v = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
+    h_q, h_kv = q.shape[1], k.shape[1]
+    if h_kv != h_q:  # GQA: expand kv heads to match query heads
+        r = h_q // h_kv
+        k = k.repeat_interleave(r, dim=1)
+        v = v.repeat_interleave(r, dim=1)
+    q, k = q.to(v.dtype), k.to(v.dtype)
+    wl = window_size[0] if isinstance(window_size, tuple) else window_size
+    seq = q.shape[-2]
+    if wl is None or wl <= 0 or wl >= seq:  # full causal
+        o = _F_sdpa.scaled_dot_product_attention(q, k, v, is_causal=causal)
+    else:  # sliding window of width wl: key j in [i - wl, i]
+        idx = torch.arange(seq, device=q.device)
+        m = (idx[None, :] <= idx[:, None]) & (idx[None, :] >= idx[:, None] - wl)
+        o = _F_sdpa.scaled_dot_product_attention(q, k, v, attn_mask=m)
+    return o.transpose(1, 2)
 
-    def _sliding_window_mask(window_size):
-        def mask_fn(b, h, q_idx, kv_idx):
-            return (q_idx >= kv_idx) & (q_idx - kv_idx < window_size)
-        return mask_fn
 
-    def _build_flex_block_mask(window_size_tuple, B, n_head, T):
-        window = window_size_tuple[0]
-        if window <= 0 or window >= T:
-            mask_fn = _causal_mask
-        else:
-            mask_fn = _sliding_window_mask(window)
-        return create_block_mask(mask_fn, B=B, H=n_head, Q_LEN=T, KV_LEN=T, device="cuda")
+class _SDPAShim:
+    flash_attn_func = staticmethod(flash_attn_func)
 
+
+fa3 = _SDPAShim()
 from prepare import MAX_SEQ_LEN, TIME_BUDGET, Tokenizer, make_dataloader, evaluate_bpb
 
 # ---------------------------------------------------------------------------
@@ -519,249 +516,250 @@ TIMING_WARMUP_STEPS = 10 + COMPILE_WARMUP_STEPS
 # Setup: tokenizer, model, optimizer, dataloader
 # ---------------------------------------------------------------------------
 
-t_start = time.time()
-torch.manual_seed(42)
-torch.cuda.manual_seed(42)
-torch.set_float32_matmul_precision("high")
-device = torch.device("cuda")
-autocast_ctx = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
-def get_gpu_peak_flops():
-    """Detect GPU and return peak bf16 TFLOPS (without sparsity) for MFU calculation."""
-    gpu_name = torch.cuda.get_device_name()
-    # Peak bf16 tensor core FLOPS (without sparsity) for known GPUs.
-    # More specific substrings must come before less specific ones.
-    known_gpus = [
-        # Blackwell data center
-        ("B200",           4500.0e12),
-        # Hopper data center
-        ("H200",            989.5e12),
-        ("H100 PCIe",       756.0e12),
-        ("H100 NVL",        835.0e12),
-        ("H100",            989.5e12),
-        # Ampere data center
-        ("A100",            312.0e12),
-        ("A10G",            125.0e12),
-        ("A10",             125.0e12),
-        # Ada Lovelace data center
-        ("L40S",            362.0e12),
-        ("L40",             181.0e12),
-        ("L4",              121.0e12),
-        # Volta
-        ("V100",            125.0e12),
-        # RTX 50 series (Blackwell)
-        ("RTX 5090",        419.0e12),
-        ("RTX 5080",        225.0e12),
-        ("5070 Ti",         176.0e12),
-        ("RTX 5070",        124.0e12),
-        # RTX 40 series (Ada Lovelace)
-        ("RTX 4090",        330.3e12),
-        ("4080 SUPER",      209.0e12),
-        ("RTX 4080",        195.0e12),
-        ("4070 Ti SUPER",   176.0e12),
-        ("4070 Ti",         160.0e12),
-        ("4070 SUPER",      142.0e12),
-        ("RTX 4070",        117.0e12),
-        # RTX 30 series (Ampere)
-        ("3090 Ti",         160.0e12),
-        ("RTX 3090",        142.0e12),
-        ("3080 Ti",         136.0e12),
-        ("RTX 3080",        119.0e12),
-    ]
-    for pattern, flops in known_gpus:
-        if pattern in gpu_name:
-            print(f"GPU: {gpu_name} ({flops/1e12:.1f} TFLOPS bf16 peak)")
-            return flops
-    # Fallback: rough estimate from compute capability and SM count
-    props = torch.cuda.get_device_properties(0)
-    num_sms = props.multi_processor_count
-    cap = torch.cuda.get_device_capability()
-    tflops_per_sm = {7: 1.6, 8: 2.2, 9: 7.5, 10: 17.6}.get(cap[0], 2.5)
-    estimated_flops = num_sms * tflops_per_sm * 1e12
-    print(f"WARNING: Unknown GPU '{gpu_name}' (CC {cap[0]}.{cap[1]}, {num_sms} SMs)")
-    print(f"  Estimated {estimated_flops/1e12:.1f} TFLOPS bf16 peak â MFU% will be approximate.")
-    print(f"  Add your GPU to get_gpu_peak_flops() for accurate MFU reporting.")
-    return estimated_flops
+if __name__ == "__main__" or os.environ.get("AICHILLES_RUN") == "1":
+    t_start = time.time()
+    torch.manual_seed(42)
+    torch.cuda.manual_seed(42)
+    torch.set_float32_matmul_precision("high")
+    device = torch.device("cuda")
+    autocast_ctx = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
+    def get_gpu_peak_flops():
+        """Detect GPU and return peak bf16 TFLOPS (without sparsity) for MFU calculation."""
+        gpu_name = torch.cuda.get_device_name()
+        # Peak bf16 tensor core FLOPS (without sparsity) for known GPUs.
+        # More specific substrings must come before less specific ones.
+        known_gpus = [
+            # Blackwell data center
+            ("B200",           4500.0e12),
+            # Hopper data center
+            ("H200",            989.5e12),
+            ("H100 PCIe",       756.0e12),
+            ("H100 NVL",        835.0e12),
+            ("H100",            989.5e12),
+            # Ampere data center
+            ("A100",            312.0e12),
+            ("A10G",            125.0e12),
+            ("A10",             125.0e12),
+            # Ada Lovelace data center
+            ("L40S",            362.0e12),
+            ("L40",             181.0e12),
+            ("L4",              121.0e12),
+            # Volta
+            ("V100",            125.0e12),
+            # RTX 50 series (Blackwell)
+            ("RTX 5090",        419.0e12),
+            ("RTX 5080",        225.0e12),
+            ("5070 Ti",         176.0e12),
+            ("RTX 5070",        124.0e12),
+            # RTX 40 series (Ada Lovelace)
+            ("RTX 4090",        330.3e12),
+            ("4080 SUPER",      209.0e12),
+            ("RTX 4080",        195.0e12),
+            ("4070 Ti SUPER",   176.0e12),
+            ("4070 Ti",         160.0e12),
+            ("4070 SUPER",      142.0e12),
+            ("RTX 4070",        117.0e12),
+            # RTX 30 series (Ampere)
+            ("3090 Ti",         160.0e12),
+            ("RTX 3090",        142.0e12),
+            ("3080 Ti",         136.0e12),
+            ("RTX 3080",        119.0e12),
+        ]
+        for pattern, flops in known_gpus:
+            if pattern in gpu_name:
+                print(f"GPU: {gpu_name} ({flops/1e12:.1f} TFLOPS bf16 peak)")
+                return flops
+        # Fallback: rough estimate from compute capability and SM count
+        props = torch.cuda.get_device_properties(0)
+        num_sms = props.multi_processor_count
+        cap = torch.cuda.get_device_capability()
+        tflops_per_sm = {7: 1.6, 8: 2.2, 9: 7.5, 10: 17.6}.get(cap[0], 2.5)
+        estimated_flops = num_sms * tflops_per_sm * 1e12
+        print(f"WARNING: Unknown GPU '{gpu_name}' (CC {cap[0]}.{cap[1]}, {num_sms} SMs)")
+        print(f"  Estimated {estimated_flops/1e12:.1f} TFLOPS bf16 peak â MFU% will be approximate.")
+        print(f"  Add your GPU to get_gpu_peak_flops() for accurate MFU reporting.")
+        return estimated_flops
 
-GPU_PEAK_FLOPS = get_gpu_peak_flops()
+    GPU_PEAK_FLOPS = get_gpu_peak_flops()
 
-tokenizer = Tokenizer.from_directory()
-vocab_size = tokenizer.get_vocab_size()
-print(f"Vocab size: {vocab_size:,}")
+    tokenizer = Tokenizer.from_directory()
+    vocab_size = tokenizer.get_vocab_size()
+    print(f"Vocab size: {vocab_size:,}")
 
-def build_model_config(depth):
-    base_dim = depth * ASPECT_RATIO
-    model_dim = ((base_dim + HEAD_DIM - 1) // HEAD_DIM) * HEAD_DIM
-    num_heads = model_dim // HEAD_DIM
-    return GPTConfig(
-        sequence_len=MAX_SEQ_LEN, vocab_size=vocab_size,
-        n_layer=depth, n_head=num_heads, n_kv_head=num_heads, n_embd=model_dim,
-        window_pattern=WINDOW_PATTERN,
+    def build_model_config(depth):
+        base_dim = depth * ASPECT_RATIO
+        model_dim = ((base_dim + HEAD_DIM - 1) // HEAD_DIM) * HEAD_DIM
+        num_heads = model_dim // HEAD_DIM
+        return GPTConfig(
+            sequence_len=MAX_SEQ_LEN, vocab_size=vocab_size,
+            n_layer=depth, n_head=num_heads, n_kv_head=num_heads, n_embd=model_dim,
+            window_pattern=WINDOW_PATTERN,
+        )
+
+    config = build_model_config(DEPTH)
+    print(f"Model config: {asdict(config)}")
+
+    with torch.device("meta"):
+        model = GPT(config)
+    model.to_empty(device=device)
+    model.init_weights()
+
+    param_counts = model.num_scaling_params()
+    print("Parameter counts:")
+    for key, value in param_counts.items():
+        print(f"  {key:24s}: {value:,}")
+    num_params = param_counts['total']
+    num_flops_per_token = model.estimate_flops()
+    print(f"Estimated FLOPs per token: {num_flops_per_token:e}")
+
+    tokens_per_fwdbwd = DEVICE_BATCH_SIZE * MAX_SEQ_LEN
+    assert TOTAL_BATCH_SIZE % tokens_per_fwdbwd == 0
+    grad_accum_steps = TOTAL_BATCH_SIZE // tokens_per_fwdbwd
+
+    optimizer = model.setup_optimizer(
+        unembedding_lr=UNEMBEDDING_LR,
+        embedding_lr=EMBEDDING_LR,
+        scalar_lr=SCALAR_LR,
+        adam_betas=ADAM_BETAS,
+        matrix_lr=MATRIX_LR,
+        weight_decay=WEIGHT_DECAY,
     )
 
-config = build_model_config(DEPTH)
-print(f"Model config: {asdict(config)}")
+    # Pre-build FlexAttention block masks BEFORE compile (avoids graph breaks)
+    if USE_FLEX_ATTENTION:
+        unique_windows = set(model.window_sizes)
+        cache = {ws: _build_flex_block_mask(ws, DEVICE_BATCH_SIZE, config.n_head, MAX_SEQ_LEN) for ws in unique_windows}
+        model._flex_block_masks = [cache[ws] for ws in model.window_sizes]
+        print(f"Pre-built {len(unique_windows)} FlexAttention block masks")
 
-with torch.device("meta"):
-    model = GPT(config)
-model.to_empty(device=device)
-model.init_weights()
+    model = torch.compile(model, dynamic=False, mode="max-autotune", fullgraph=True)
 
-param_counts = model.num_scaling_params()
-print("Parameter counts:")
-for key, value in param_counts.items():
-    print(f"  {key:24s}: {value:,}")
-num_params = param_counts['total']
-num_flops_per_token = model.estimate_flops()
-print(f"Estimated FLOPs per token: {num_flops_per_token:e}")
+    train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
+    x, y, epoch = next(train_loader)  # prefetch first batch
 
-tokens_per_fwdbwd = DEVICE_BATCH_SIZE * MAX_SEQ_LEN
-assert TOTAL_BATCH_SIZE % tokens_per_fwdbwd == 0
-grad_accum_steps = TOTAL_BATCH_SIZE // tokens_per_fwdbwd
+    print(f"Time budget: {TIME_BUDGET}s")
+    print(f"Gradient accumulation steps: {grad_accum_steps}")
 
-optimizer = model.setup_optimizer(
-    unembedding_lr=UNEMBEDDING_LR,
-    embedding_lr=EMBEDDING_LR,
-    scalar_lr=SCALAR_LR,
-    adam_betas=ADAM_BETAS,
-    matrix_lr=MATRIX_LR,
-    weight_decay=WEIGHT_DECAY,
-)
+    # Schedules (all based on progress = training_time / TIME_BUDGET)
 
-# Pre-build FlexAttention block masks BEFORE compile (avoids graph breaks)
-if USE_FLEX_ATTENTION:
-    unique_windows = set(model.window_sizes)
-    cache = {ws: _build_flex_block_mask(ws, DEVICE_BATCH_SIZE, config.n_head, MAX_SEQ_LEN) for ws in unique_windows}
-    model._flex_block_masks = [cache[ws] for ws in model.window_sizes]
-    print(f"Pre-built {len(unique_windows)} FlexAttention block masks")
+    def get_lr_multiplier(progress):
+        if progress < WARMUP_RATIO:
+            return progress / WARMUP_RATIO if WARMUP_RATIO > 0 else 1.0
+        elif progress < 1.0 - WARMDOWN_RATIO:
+            return 1.0
+        else:
+            # Sqrt decay: 1 - sqrt(t) shape (OLMo 2, Phi-4 style)
+            decay_progress = (progress - (1.0 - WARMDOWN_RATIO)) / WARMDOWN_RATIO  # 0→1
+            sqrt_decay = 1.0 - decay_progress ** 0.7  # more gradual than sqrt
+            return sqrt_decay * (1.0 - FINAL_LR_FRAC) + FINAL_LR_FRAC
 
-model = torch.compile(model, dynamic=False, mode="max-autotune", fullgraph=True)
+    def get_muon_momentum(step):
+        frac = min(step / 300, 1)
+        return (1 - frac) * 0.85 + frac * 0.95
 
-train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
-x, y, epoch = next(train_loader)  # prefetch first batch
+    def get_weight_decay(progress):
+        return WEIGHT_DECAY * (1 - progress)
 
-print(f"Time budget: {TIME_BUDGET}s")
-print(f"Gradient accumulation steps: {grad_accum_steps}")
+    # ---------------------------------------------------------------------------
+    # Training loop
+    # ---------------------------------------------------------------------------
 
-# Schedules (all based on progress = training_time / TIME_BUDGET)
+    t_start_training = time.time()
+    smooth_train_loss = 0
+    total_training_time = 0
+    step = 0
 
-def get_lr_multiplier(progress):
-    if progress < WARMUP_RATIO:
-        return progress / WARMUP_RATIO if WARMUP_RATIO > 0 else 1.0
-    elif progress < 1.0 - WARMDOWN_RATIO:
-        return 1.0
-    else:
-        # Sqrt decay: 1 - sqrt(t) shape (OLMo 2, Phi-4 style)
-        decay_progress = (progress - (1.0 - WARMDOWN_RATIO)) / WARMDOWN_RATIO  # 0→1
-        sqrt_decay = 1.0 - decay_progress ** 0.7  # more gradual than sqrt
-        return sqrt_decay * (1.0 - FINAL_LR_FRAC) + FINAL_LR_FRAC
+    start_event = torch.cuda.Event(enable_timing=True)
+    end_event = torch.cuda.Event(enable_timing=True)
 
-def get_muon_momentum(step):
-    frac = min(step / 300, 1)
-    return (1 - frac) * 0.85 + frac * 0.95
+    while True:
+        torch.compiler.cudagraph_mark_step_begin()
+        start_event.record()
+        for micro_step in range(grad_accum_steps):
+            with autocast_ctx:
+                loss = model(x, y)
+            train_loss = loss.detach()
+            loss = loss / grad_accum_steps
+            loss.backward()
+            x, y, epoch = next(train_loader)
 
-def get_weight_decay(progress):
-    return WEIGHT_DECAY * (1 - progress)
+        # Progress and schedules
+        progress = min(total_training_time / TIME_BUDGET, 1.0)
+        lrm = get_lr_multiplier(progress)
+        muon_momentum = get_muon_momentum(step)
+        muon_weight_decay = get_weight_decay(progress)
+        ve_warmup_frac = min(progress / 0.10, 1.0) if progress < 0.10 else 1.0
+        for gi, group in enumerate(optimizer.param_groups):
+            group["lr"] = group["initial_lr"] * lrm
+            if gi == 2:  # VE param group
+                group["lr"] *= ve_warmup_frac
+            if group['kind'] == 'muon':
+                group["momentum"] = muon_momentum
+                group["weight_decay"] = muon_weight_decay
+        optimizer.step()
+        model.zero_grad(set_to_none=True)
 
-# ---------------------------------------------------------------------------
-# Training loop
-# ---------------------------------------------------------------------------
+        train_loss_f = train_loss.item()
 
-t_start_training = time.time()
-smooth_train_loss = 0
-total_training_time = 0
-step = 0
+        # Fast fail: abort if loss is exploding or NaN
+        if math.isnan(train_loss_f) or train_loss_f > 100:
+            print("FAIL")
+            exit(1)
 
-start_event = torch.cuda.Event(enable_timing=True)
-end_event = torch.cuda.Event(enable_timing=True)
+        end_event.record()
+        end_event.synchronize()
+        dt = start_event.elapsed_time(end_event) / 1000
 
-while True:
-    torch.compiler.cudagraph_mark_step_begin()
-    start_event.record()
-    for micro_step in range(grad_accum_steps):
-        with autocast_ctx:
-            loss = model(x, y)
-        train_loss = loss.detach()
-        loss = loss / grad_accum_steps
-        loss.backward()
-        x, y, epoch = next(train_loader)
+        if step > TIMING_WARMUP_STEPS:
+            total_training_time += dt
 
-    # Progress and schedules
-    progress = min(total_training_time / TIME_BUDGET, 1.0)
-    lrm = get_lr_multiplier(progress)
-    muon_momentum = get_muon_momentum(step)
-    muon_weight_decay = get_weight_decay(progress)
-    ve_warmup_frac = min(progress / 0.10, 1.0) if progress < 0.10 else 1.0
-    for gi, group in enumerate(optimizer.param_groups):
-        group["lr"] = group["initial_lr"] * lrm
-        if gi == 2:  # VE param group
-            group["lr"] *= ve_warmup_frac
-        if group['kind'] == 'muon':
-            group["momentum"] = muon_momentum
-            group["weight_decay"] = muon_weight_decay
-    optimizer.step()
-    model.zero_grad(set_to_none=True)
+        # Logging
+        ema_beta = 0.9
+        smooth_train_loss = ema_beta * smooth_train_loss + (1 - ema_beta) * train_loss_f
+        debiased_smooth_loss = smooth_train_loss / (1 - ema_beta**(step + 1))
+        pct_done = 100 * progress
+        tok_per_sec = int(TOTAL_BATCH_SIZE / dt)
+        mfu = 100 * num_flops_per_token * TOTAL_BATCH_SIZE / dt / GPU_PEAK_FLOPS
+        remaining = max(0, TIME_BUDGET - total_training_time)
 
-    train_loss_f = train_loss.item()
+        print(f"\rstep {step:05d} ({pct_done:.1f}%) | loss: {debiased_smooth_loss:.6f} | lrm: {lrm:.2f} | dt: {dt*1000:.0f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.1f}% | epoch: {epoch} | remaining: {remaining:.0f}s    ", end="", flush=True)
 
-    # Fast fail: abort if loss is exploding or NaN
-    if math.isnan(train_loss_f) or train_loss_f > 100:
-        print("FAIL")
-        exit(1)
+        # GC management (Python's GC causes ~500ms stalls)
+        if step == 0:
+            gc.collect()
+            gc.freeze()
+            gc.disable()
+        elif (step + 1) % 5000 == 0:
+            gc.collect()
 
-    end_event.record()
-    end_event.synchronize()
-    dt = start_event.elapsed_time(end_event) / 1000
+        step += 1
 
-    if step > TIMING_WARMUP_STEPS:
-        total_training_time += dt
+        # Time's up â but only stop after warmup steps so we don't count compilation
+        if step > TIMING_WARMUP_STEPS and total_training_time >= TIME_BUDGET:
+            break
 
-    # Logging
-    ema_beta = 0.9
-    smooth_train_loss = ema_beta * smooth_train_loss + (1 - ema_beta) * train_loss_f
-    debiased_smooth_loss = smooth_train_loss / (1 - ema_beta**(step + 1))
-    pct_done = 100 * progress
-    tok_per_sec = int(TOTAL_BATCH_SIZE / dt)
-    mfu = 100 * num_flops_per_token * TOTAL_BATCH_SIZE / dt / GPU_PEAK_FLOPS
-    remaining = max(0, TIME_BUDGET - total_training_time)
+    print()  # newline after \r training log
 
-    print(f"\rstep {step:05d} ({pct_done:.1f}%) | loss: {debiased_smooth_loss:.6f} | lrm: {lrm:.2f} | dt: {dt*1000:.0f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.1f}% | epoch: {epoch} | remaining: {remaining:.0f}s    ", end="", flush=True)
+    total_tokens = step * TOTAL_BATCH_SIZE
 
-    # GC management (Python's GC causes ~500ms stalls)
-    if step == 0:
-        gc.collect()
-        gc.freeze()
-        gc.disable()
-    elif (step + 1) % 5000 == 0:
-        gc.collect()
+    # Final eval
+    model.eval()
+    with autocast_ctx:
+        val_bpb = evaluate_bpb(model, tokenizer, DEVICE_BATCH_SIZE)
 
-    step += 1
+    # Final summary
+    t_end = time.time()
+    startup_time = t_start_training - t_start
+    steady_state_mfu = 100 * num_flops_per_token * TOTAL_BATCH_SIZE * (step - TIMING_WARMUP_STEPS) / total_training_time / GPU_PEAK_FLOPS if total_training_time > 0 else 0
+    peak_vram_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
 
-    # Time's up â but only stop after warmup steps so we don't count compilation
-    if step > TIMING_WARMUP_STEPS and total_training_time >= TIME_BUDGET:
-        break
-
-print()  # newline after \r training log
-
-total_tokens = step * TOTAL_BATCH_SIZE
-
-# Final eval
-model.eval()
-with autocast_ctx:
-    val_bpb = evaluate_bpb(model, tokenizer, DEVICE_BATCH_SIZE)
-
-# Final summary
-t_end = time.time()
-startup_time = t_start_training - t_start
-steady_state_mfu = 100 * num_flops_per_token * TOTAL_BATCH_SIZE * (step - TIMING_WARMUP_STEPS) / total_training_time / GPU_PEAK_FLOPS if total_training_time > 0 else 0
-peak_vram_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
-
-print("---")
-print(f"val_bpb:          {val_bpb:.6f}")
-print(f"training_seconds: {total_training_time:.1f}")
-print(f"total_seconds:    {t_end - t_start:.1f}")
-print(f"peak_vram_mb:     {peak_vram_mb:.1f}")
-print(f"mfu_percent:      {steady_state_mfu:.2f}")
-print(f"total_tokens_M:   {total_tokens / 1e6:.1f}")
-print(f"num_steps:        {step}")
-print(f"num_params_M:     {num_params / 1e6:.1f}")
-print(f"depth:            {DEPTH}")
+    print("---")
+    print(f"val_bpb:          {val_bpb:.6f}")
+    print(f"training_seconds: {total_training_time:.1f}")
+    print(f"total_seconds:    {t_end - t_start:.1f}")
+    print(f"peak_vram_mb:     {peak_vram_mb:.1f}")
+    print(f"mfu_percent:      {steady_state_mfu:.2f}")
+    print(f"total_tokens_M:   {total_tokens / 1e6:.1f}")
+    print(f"num_steps:        {step}")
+    print(f"num_params_M:     {num_params / 1e6:.1f}")
+    print(f"depth:            {DEPTH}")
