@@ -36,6 +36,16 @@ import pyarrow.parquet as pq
 import tiktoken
 import torch
 
+# Re-export the runtime harness so the autoresearch / leaderboard programs'
+#   `from prepare import MAX_SEQ_LEN, TIME_BUDGET, Tokenizer, make_dataloader, evaluate_bpb`
+# resolves here. Those programs expect prepare.py to be BOTH the data builder
+# (run via `python prepare.py`) AND the runtime harness — our harness lives in
+# lib.py, so we surface its symbols here. main() stays guarded, so importing
+# prepare is side-effect-free (no data build is triggered).
+from lib import (  # noqa: E402,F401
+    MAX_SEQ_LEN, TIME_BUDGET, Tokenizer, make_dataloader, evaluate_bpb,
+)
+
 VAL_SHARD = 6542               # MUST match lib.py MAX_SHARD / VAL_SHARD
 BOS_TOKEN = "<|reserved_0|>"   # MUST match lib.py BOS_TOKEN
 
