@@ -43,6 +43,18 @@ Usage: uv run train.py
 
 import os
 
+# --- path bootstrap (auto-inserted): add the dir holding prepare.py + lib.py to
+#     sys.path so `from prepare import ...` works from any cwd, no PYTHONPATH needed.
+import os as _os, sys as _sys
+_h = _os.path.dirname(_os.path.abspath(__file__))
+while _h != _os.path.dirname(_h):
+    if _os.path.exists(_os.path.join(_h, "prepare.py")) and _os.path.exists(_os.path.join(_h, "lib.py")):
+        if _h not in _sys.path:
+            _sys.path.insert(0, _h)
+        break
+    _h = _os.path.dirname(_h)
+# --- end path bootstrap ---
+
 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
 
