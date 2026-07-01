@@ -88,7 +88,7 @@ vpip install anthropic matplotlib scipy
 
 say "7. HARD verify (fails loudly if anything is missing)"
 "$VPY" - <<'PY' || die "verification failed — the venv is NOT ready (see traceback above)"
-import importlib, sys
+import importlib.util, sys
 required = ["torch", "numpy", "tiktoken", "pyarrow", "huggingface_hub", "anthropic", "matplotlib"]
 missing = [m for m in required if importlib.util.find_spec(m) is None]
 if missing:
