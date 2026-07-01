@@ -70,6 +70,8 @@ class _SDPAShim:
 
 
 fa3 = _SDPAShim()
+# FA4 direct path was removed by the SDPA adaptation; force the SDPA else-branch.
+USE_FA4_DIRECT = False
 from prepare import MAX_SEQ_LEN, TIME_BUDGET, Tokenizer, make_dataloader, evaluate_bpb
 
 # ---------------------------------------------------------------------------

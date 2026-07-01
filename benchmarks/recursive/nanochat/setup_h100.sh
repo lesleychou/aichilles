@@ -127,7 +127,7 @@ Activate and use THIS venv (the one above):
   python -c "import torch; print(torch.__version__)"   # sanity: should NOT error
 
 Then:
-  export DATA_DIR=\$HOME/nanochat_data && mkdir -p "\$DATA_DIR"
+  export DATA_DIR=\$HOME/data && mkdir -p "\$DATA_DIR"
   export ANTHROPIC_API_KEY=sk-...
   python prepare.py
 EOF
